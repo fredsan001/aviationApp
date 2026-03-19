@@ -61,25 +61,39 @@ export default function UploadVideo() {
       formData.append('title', title.trim());
       formData.append('description', description.trim());
       formData.append('category', category);
-      formData.append('auto_transcribe', autoTranscribe.toString());
+      formData.append('auto_transcribe', autoTranscribe ? 'true' : 'false');
       
-      // Append file
-      formData.append('file', {
-        uri: selectedFile.uri,
-        name: selectedFile.name || 'video.mp4',
-        type: selectedFile.mimeType || 'video/mp4',
-      } as any);
+      // Handle file differently for web vs native
+      if (Platform.OS === 'web') {
+        // For web, fetch the file and create a proper blob
+        const response = await fetch(selectedFile.uri);
+        const blob = await response.blob();
+        formData.append('file', blob, selectedFile.name || 'video.mp4');
+      } else {
+        // For native (iOS/Android)
+        formData.append('file', {
+          uri: selectedFile.uri,
+          name: selectedFile.name || 'video.mp4',
+          type: selectedFile.mimeType || 'video/mp4',
+        } as any);
+      }
 
+      console.log('Uploading video...', { title, category, autoTranscribe });
+      
       await apiService.uploadVideo(formData, (progress) => {
         setUploadProgress(progress);
+        console.log('Upload progress:', progress);
       });
 
-      Alert.alert('Success', 'Video uploaded successfully!' + (autoTranscribe ? ' Transcription will begin shortly.' : ''), [
-        { text: 'OK', onPress: () => router.back() }
-      ]);
+      Alert.alert(
+        '✅ Video Uploaded!', 
+        'Video uploaded successfully!' + (autoTranscribe ? '\n\nThe AI is now transcribing the audio to generate subtitles. This may take a few minutes.' : ''), 
+        [{ text: 'OK', onPress: () => router.back() }]
+      );
     } catch (error: any) {
       console.error('Upload error:', error);
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to upload video');
+      const errorMessage = error.response?.data?.detail || error.message || 'Failed to upload video. Please try again.';
+      Alert.alert('❌ Upload Failed', errorMessage);
     } finally {
       setUploading(false);
     }

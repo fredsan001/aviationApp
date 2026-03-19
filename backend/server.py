@@ -287,18 +287,31 @@ async def create_video(
     title: str = Form(...),
     description: str = Form(""),
     category: str = Form("General"),
-    auto_transcribe: bool = Form(True),
+    auto_transcribe: str = Form("true"),
     file: UploadFile = File(...)
 ):
     """Upload a video with optional automatic transcription"""
     
-    # Validate file type
-    allowed_types = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo']
-    if file.content_type not in allowed_types:
-        raise HTTPException(status_code=400, detail="Invalid file type. Allowed: mp4, webm, mov, avi")
+    # Parse auto_transcribe as boolean
+    should_transcribe = auto_transcribe.lower() in ['true', '1', 'yes']
     
-    # Generate unique filename
-    file_ext = os.path.splitext(file.filename)[1] or '.mp4'
+    # Validate file type - be more flexible with content types
+    allowed_types = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'application/octet-stream']
+    allowed_extensions = ['.mp4', '.webm', '.mov', '.avi']
+    
+    file_ext = os.path.splitext(file.filename or '')[1].lower()
+    content_type_valid = file.content_type in allowed_types
+    extension_valid = file_ext in allowed_extensions
+    
+    if not (content_type_valid or extension_valid):
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Invalid file type. Allowed: mp4, webm, mov, avi. Got: {file.content_type}, ext: {file_ext}"
+        )
+    
+    # Use extension to determine actual type if content_type is generic
+    if file_ext == '':
+        file_ext = '.mp4'  # Default
     unique_filename = f"{uuid.uuid4()}{file_ext}"
     file_path = UPLOADS_DIR / unique_filename
     
@@ -327,14 +340,14 @@ async def create_video(
         category=category,
         video_filename=unique_filename,
         duration=duration,
-        is_processing=auto_transcribe,
-        processing_status="Queued for transcription" if auto_transcribe else ""
+        is_processing=should_transcribe,
+        processing_status="Queued for transcription" if should_transcribe else ""
     )
     
     await db.videos.insert_one(video.dict())
     
     # Start transcription in background
-    if auto_transcribe:
+    if should_transcribe:
         background_tasks.add_task(transcribe_video_audio, video.id, str(file_path))
     
     return video.dict()
