@@ -396,7 +396,10 @@ async def delete_video(video_id: str):
 
 @api_router.get("/videos/{video_id}/stream")
 async def stream_video(video_id: str):
-    """Stream video file"""
+    """Stream video file with range support for web compatibility"""
+    from fastapi import Request
+    from fastapi.responses import Response
+    
     video = await db.videos.find_one({"id": video_id})
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
@@ -404,10 +407,6 @@ async def stream_video(video_id: str):
     file_path = UPLOADS_DIR / video['video_filename']
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Video file not found")
-    
-    def iterfile():
-        with open(file_path, 'rb') as f:
-            yield from f
     
     # Determine content type
     ext = file_path.suffix.lower()
@@ -419,7 +418,22 @@ async def stream_video(video_id: str):
     }
     content_type = content_types.get(ext, 'video/mp4')
     
-    return StreamingResponse(iterfile(), media_type=content_type)
+    # Get file size
+    file_size = os.path.getsize(file_path)
+    
+    # Read entire file and return with proper headers
+    with open(file_path, 'rb') as f:
+        content = f.read()
+    
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={
+            'Accept-Ranges': 'bytes',
+            'Content-Length': str(file_size),
+            'Content-Disposition': f'inline; filename="{video["video_filename"]}"'
+        }
+    )
 
 # ------------ Subtitles (Manual) ------------
 
