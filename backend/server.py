@@ -1,8 +1,8 @@
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Form, BackgroundTasks
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Form, BackgroundTasks, Request
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 import os
 import logging
 from pathlib import Path
@@ -395,9 +395,8 @@ async def delete_video(video_id: str):
     return {"message": "Video deleted"}
 
 @api_router.get("/videos/{video_id}/stream")
-async def stream_video(video_id: str):
-    """Stream video file with range support for web compatibility"""
-    from fastapi import Request
+async def stream_video(video_id: str, request: Request):
+    """Stream video file with proper Range Request support for iOS/Safari"""
     from fastapi.responses import Response
     
     video = await db.videos.find_one({"id": video_id})
@@ -421,19 +420,56 @@ async def stream_video(video_id: str):
     # Get file size
     file_size = os.path.getsize(file_path)
     
-    # Read entire file and return with proper headers
-    with open(file_path, 'rb') as f:
-        content = f.read()
+    # Check for Range header (required for iOS video playback)
+    range_header = request.headers.get('range')
     
-    return Response(
-        content=content,
-        media_type=content_type,
-        headers={
-            'Accept-Ranges': 'bytes',
-            'Content-Length': str(file_size),
-            'Content-Disposition': f'inline; filename="{video["video_filename"]}"'
-        }
-    )
+    if range_header:
+        # Parse range header
+        range_match = range_header.replace('bytes=', '').split('-')
+        start = int(range_match[0]) if range_match[0] else 0
+        end = int(range_match[1]) if range_match[1] else file_size - 1
+        
+        # Ensure valid range
+        if start >= file_size:
+            start = 0
+        if end >= file_size:
+            end = file_size - 1
+        
+        content_length = end - start + 1
+        
+        # Read the requested range
+        with open(file_path, 'rb') as f:
+            f.seek(start)
+            content = f.read(content_length)
+        
+        # Return 206 Partial Content
+        return Response(
+            content=content,
+            status_code=206,
+            media_type=content_type,
+            headers={
+                'Content-Range': f'bytes {start}-{end}/{file_size}',
+                'Accept-Ranges': 'bytes',
+                'Content-Length': str(content_length),
+                'Content-Disposition': f'inline; filename="{video["video_filename"]}"',
+                'Cache-Control': 'no-cache',
+            }
+        )
+    else:
+        # No range requested - return full file
+        with open(file_path, 'rb') as f:
+            content = f.read()
+        
+        return Response(
+            content=content,
+            media_type=content_type,
+            headers={
+                'Accept-Ranges': 'bytes',
+                'Content-Length': str(file_size),
+                'Content-Disposition': f'inline; filename="{video["video_filename"]}"',
+                'Cache-Control': 'no-cache',
+            }
+        )
 
 # ------------ Subtitles (Manual) ------------
 
