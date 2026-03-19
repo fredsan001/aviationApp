@@ -488,6 +488,132 @@ async def add_subtitle(video_id: str, subtitle: SubtitleCreate):
     
     return subtitle_obj
 
+# ------------ Video Thumbnail ------------
+
+@api_router.get("/videos/{video_id}/thumbnail")
+async def get_video_thumbnail(video_id: str):
+    """Generate and return a thumbnail from the video"""
+    import subprocess
+    
+    video = await db.videos.find_one({"id": video_id})
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    file_path = UPLOADS_DIR / video['video_filename']
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Video file not found")
+    
+    # Generate thumbnail path
+    thumbnail_path = UPLOADS_DIR / f"{video_id}_thumb.jpg"
+    
+    # Generate thumbnail if it doesn't exist
+    if not thumbnail_path.exists():
+        try:
+            # Extract frame at 1 second (or beginning if video is shorter)
+            subprocess.run([
+                'ffmpeg', '-i', str(file_path),
+                '-ss', '00:00:01',
+                '-vframes', '1',
+                '-vf', 'scale=320:-1',
+                '-y', str(thumbnail_path)
+            ], capture_output=True, timeout=30)
+        except Exception as e:
+            logger.error(f"Error generating thumbnail: {e}")
+            raise HTTPException(status_code=500, detail="Failed to generate thumbnail")
+    
+    if not thumbnail_path.exists():
+        raise HTTPException(status_code=404, detail="Thumbnail not available")
+    
+    with open(thumbnail_path, 'rb') as f:
+        content = f.read()
+    
+    return Response(
+        content=content,
+        media_type='image/jpeg',
+        headers={'Cache-Control': 'max-age=86400'}
+    )
+
+# ------------ Subtitle Translation ------------
+
+class TranslateRequest(BaseModel):
+    target_language: str = "es"  # Default Spanish
+
+@api_router.post("/videos/{video_id}/translate-subtitles")
+async def translate_subtitles(video_id: str, req: TranslateRequest):
+    """Translate subtitles to another language using AI"""
+    video = await db.videos.find_one({"id": video_id})
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    if not video.get('subtitles') or len(video['subtitles']) == 0:
+        raise HTTPException(status_code=400, detail="No subtitles to translate")
+    
+    try:
+        from emergentintegrations.llm.openai import OpenAIChat, OpenAIModel
+        
+        chat = OpenAIChat(api_key=os.getenv("EMERGENT_LLM_KEY"))
+        
+        # Prepare subtitles for translation
+        subtitles_text = "\n".join([
+            f"{i+1}. {s['text']}" 
+            for i, s in enumerate(video['subtitles'])
+        ])
+        
+        language_names = {
+            "es": "Spanish",
+            "en": "English",
+            "fr": "French",
+            "de": "German",
+            "pt": "Portuguese",
+            "it": "Italian"
+        }
+        target_lang = language_names.get(req.target_language, "Spanish")
+        
+        prompt = f"""Translate the following aviation communication subtitles to {target_lang}. 
+Keep the same numbering format. Only provide the translations, no explanations.
+
+{subtitles_text}"""
+        
+        response = await chat.chat(
+            model=OpenAIModel.GPT4O,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2000
+        )
+        
+        # Parse translated subtitles
+        translated_lines = response.strip().split('\n')
+        translated_subtitles = []
+        
+        for i, subtitle in enumerate(video['subtitles']):
+            translated_text = subtitle['text']  # Default to original
+            
+            # Try to find matching translation
+            for line in translated_lines:
+                if line.startswith(f"{i+1}."):
+                    translated_text = line.split('.', 1)[1].strip()
+                    break
+            
+            translated_subtitles.append({
+                **subtitle,
+                'text_translated': translated_text,
+                'original_text': subtitle['text']
+            })
+        
+        # Update video with translations
+        await db.videos.update_one(
+            {"id": video_id},
+            {"$set": {
+                "subtitles_translated": translated_subtitles,
+                "translation_language": req.target_language
+            }}
+        )
+        
+        return {"message": "Subtitles translated successfully", "language": req.target_language}
+        
+    except Exception as e:
+        logger.error(f"Translation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Translation failed: {str(e)}")
+
 @api_router.put("/videos/{video_id}/subtitles/{subtitle_id}")
 async def update_subtitle(video_id: str, subtitle_id: str, subtitle: SubtitleCreate):
     result = await db.videos.update_one(

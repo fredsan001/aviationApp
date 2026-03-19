@@ -26,6 +26,7 @@ export default function UploadVideo() {
   const [selectedFile, setSelectedFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
 
   const pickVideo = async () => {
     try {
@@ -36,20 +37,21 @@ export default function UploadVideo() {
 
       if (!result.canceled && result.assets[0]) {
         setSelectedFile(result.assets[0]);
+        setUploadSuccess(false);
       }
     } catch (error) {
       console.error('Error picking video:', error);
-      Alert.alert('Error', 'Failed to select video');
+      Alert.alert('Error', 'No se pudo seleccionar el video');
     }
   };
 
   const handleUpload = async () => {
     if (!title.trim()) {
-      Alert.alert('Error', 'Please enter a video title');
+      Alert.alert('Error', 'Por favor ingresa un título para el video');
       return;
     }
     if (!selectedFile) {
-      Alert.alert('Error', 'Please select a video file');
+      Alert.alert('Error', 'Por favor selecciona un archivo de video');
       return;
     }
 
@@ -65,12 +67,10 @@ export default function UploadVideo() {
       
       // Handle file differently for web vs native
       if (Platform.OS === 'web') {
-        // For web, fetch the file and create a proper blob
         const response = await fetch(selectedFile.uri);
         const blob = await response.blob();
         formData.append('file', blob, selectedFile.name || 'video.mp4');
       } else {
-        // For native (iOS/Android)
         formData.append('file', {
           uri: selectedFile.uri,
           name: selectedFile.name || 'video.mp4',
@@ -78,26 +78,76 @@ export default function UploadVideo() {
         } as any);
       }
 
-      console.log('Uploading video...', { title, category, autoTranscribe });
-      
       await apiService.uploadVideo(formData, (progress) => {
         setUploadProgress(progress);
-        console.log('Upload progress:', progress);
       });
 
-      Alert.alert(
-        '✅ Video Uploaded!', 
-        'Video uploaded successfully!' + (autoTranscribe ? '\n\nThe AI is now transcribing the audio to generate subtitles. This may take a few minutes.' : ''), 
-        [{ text: 'OK', onPress: () => router.back() }]
-      );
+      setUploadSuccess(true);
+      setUploading(false);
+
     } catch (error: any) {
       console.error('Upload error:', error);
-      const errorMessage = error.response?.data?.detail || error.message || 'Failed to upload video. Please try again.';
-      Alert.alert('❌ Upload Failed', errorMessage);
-    } finally {
       setUploading(false);
+      Alert.alert('Error', error.response?.data?.detail || 'Error al subir el video. Intenta de nuevo.');
     }
   };
+
+  const resetForm = () => {
+    setTitle('');
+    setDescription('');
+    setCategory('General');
+    setSelectedFile(null);
+    setUploadSuccess(false);
+    setUploadProgress(0);
+  };
+
+  // Success Screen
+  if (uploadSuccess) {
+    return (
+      <SafeAreaView style={styles.container} edges={['bottom']}>
+        <View style={styles.successContainer}>
+          <View style={styles.successIcon}>
+            <Ionicons name="checkmark-circle" size={80} color="#4CAF50" />
+          </View>
+          <Text style={styles.successTitle}>¡Video Subido!</Text>
+          <Text style={styles.successMessage}>
+            El video "{title}" se ha subido correctamente.
+          </Text>
+          {autoTranscribe && (
+            <Text style={styles.transcribeMessage}>
+              La IA está generando los subtítulos automáticamente. Este proceso puede tomar unos minutos.
+            </Text>
+          )}
+          
+          <View style={styles.successButtons}>
+            <TouchableOpacity 
+              style={styles.successButton}
+              onPress={() => router.push('/admin/videos')}
+            >
+              <Ionicons name="videocam" size={20} color="#fff" />
+              <Text style={styles.successButtonText}>Ver Videos</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.successButton, styles.secondaryButton]}
+              onPress={resetForm}
+            >
+              <Ionicons name="add" size={20} color="#2196F3" />
+              <Text style={[styles.successButtonText, styles.secondaryButtonText]}>Subir Otro</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.successButton, styles.outlineButton]}
+              onPress={() => router.replace('/admin')}
+            >
+              <Ionicons name="home" size={20} color="#888" />
+              <Text style={[styles.successButtonText, styles.outlineButtonText]}>Ir al Inicio</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
@@ -119,7 +169,7 @@ export default function UploadVideo() {
                 color={selectedFile ? '#4CAF50' : '#2196F3'} 
               />
               <Text style={styles.fileSelectorText}>
-                {selectedFile ? selectedFile.name : 'Tap to select a video'}
+                {selectedFile ? selectedFile.name : 'Toca para seleccionar un video'}
               </Text>
               {selectedFile && (
                 <Text style={styles.fileSizeText}>
@@ -131,10 +181,10 @@ export default function UploadVideo() {
 
           {/* Title Input */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Title *</Text>
+            <Text style={styles.label}>Título *</Text>
             <TextInput
               style={styles.input}
-              placeholder="Enter video title"
+              placeholder="Ingresa el título del video"
               placeholderTextColor="#666"
               value={title}
               onChangeText={setTitle}
@@ -144,10 +194,10 @@ export default function UploadVideo() {
 
           {/* Description Input */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Description</Text>
+            <Text style={styles.label}>Descripción</Text>
             <TextInput
               style={[styles.input, styles.textArea]}
-              placeholder="Enter video description"
+              placeholder="Ingresa una descripción (opcional)"
               placeholderTextColor="#666"
               value={description}
               onChangeText={setDescription}
@@ -159,10 +209,10 @@ export default function UploadVideo() {
 
           {/* Category Input */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Category</Text>
+            <Text style={styles.label}>Categoría</Text>
             <TextInput
               style={styles.input}
-              placeholder="Enter category (e.g., Takeoff, Landing)"
+              placeholder="Ej: Despegue, Aterrizaje, Emergencia"
               placeholderTextColor="#666"
               value={category}
               onChangeText={setCategory}
@@ -173,8 +223,8 @@ export default function UploadVideo() {
           {/* Auto Transcribe Toggle */}
           <View style={styles.toggleGroup}>
             <View style={styles.toggleInfo}>
-              <Text style={styles.toggleLabel}>Auto-generate Subtitles</Text>
-              <Text style={styles.toggleDescription}>Use AI to automatically transcribe audio</Text>
+              <Text style={styles.toggleLabel}>Generar Subtítulos con IA</Text>
+              <Text style={styles.toggleDescription}>Transcribe automáticamente el audio a texto</Text>
             </View>
             <Switch
               value={autoTranscribe}
@@ -191,25 +241,38 @@ export default function UploadVideo() {
               <View style={styles.progressBar}>
                 <View style={[styles.progressFill, { width: `${uploadProgress}%` }]} />
               </View>
-              <Text style={styles.progressText}>{uploadProgress}% uploaded</Text>
+              <Text style={styles.progressText}>
+                {uploadProgress < 100 ? `Subiendo... ${uploadProgress}%` : 'Procesando...'}
+              </Text>
             </View>
           )}
 
-          {/* Upload Button */}
-          <TouchableOpacity
-            style={[styles.uploadButton, (!selectedFile || uploading) && styles.uploadButtonDisabled]}
-            onPress={handleUpload}
-            disabled={!selectedFile || uploading}
-          >
-            {uploading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="cloud-upload" size={24} color="#fff" />
-                <Text style={styles.uploadButtonText}>Upload Video</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          {/* Buttons */}
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={[styles.uploadButton, (!selectedFile || uploading) && styles.uploadButtonDisabled]}
+              onPress={handleUpload}
+              disabled={!selectedFile || uploading}
+            >
+              {uploading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="cloud-upload" size={24} color="#fff" />
+                  <Text style={styles.uploadButtonText}>Subir Video</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => router.back()}
+              disabled={uploading}
+            >
+              <Ionicons name="arrow-back" size={20} color="#888" />
+              <Text style={styles.cancelButtonText}>Volver al Dashboard</Text>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -314,6 +377,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
   },
+  buttonContainer: {
+    gap: 12,
+  },
   uploadButton: {
     backgroundColor: '#4CAF50',
     borderRadius: 12,
@@ -330,5 +396,79 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: '600',
+  },
+  cancelButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    gap: 8,
+  },
+  cancelButtonText: {
+    color: '#888',
+    fontSize: 16,
+  },
+  // Success screen styles
+  successContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  successIcon: {
+    marginBottom: 24,
+  },
+  successTitle: {
+    color: '#fff',
+    fontSize: 28,
+    fontWeight: 'bold',
+    marginBottom: 12,
+  },
+  successMessage: {
+    color: '#888',
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  transcribeMessage: {
+    color: '#FF9800',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 32,
+    paddingHorizontal: 20,
+  },
+  successButtons: {
+    width: '100%',
+    gap: 12,
+  },
+  successButton: {
+    backgroundColor: '#4CAF50',
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  secondaryButton: {
+    backgroundColor: '#1E1E1E',
+    borderWidth: 1,
+    borderColor: '#2196F3',
+  },
+  outlineButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  successButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  secondaryButtonText: {
+    color: '#2196F3',
+  },
+  outlineButtonText: {
+    color: '#888',
   },
 });

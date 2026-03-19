@@ -104,6 +104,10 @@ export default function VideoPlayer() {
   const [loopEnd, setLoopEnd] = useState<number | null>(null);
   const [isLooping, setIsLooping] = useState(false);
   
+  // Subtitle language state
+  const [subtitleLanguage, setSubtitleLanguage] = useState<'en' | 'es'>('en');
+  const [translating, setTranslating] = useState(false);
+  
   const { accessCode } = useAppStore();
   const isWeb = Platform.OS === 'web';
 
@@ -154,6 +158,38 @@ export default function VideoPlayer() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const translateSubtitles = async () => {
+    if (!video || translating) return;
+    
+    setTranslating(true);
+    try {
+      await apiService.translateSubtitles(video.id, 'es');
+      // Refresh video data to get translations
+      const updatedVideo = await apiService.getVideo(video.id);
+      setVideo(updatedVideo);
+      Alert.alert('Éxito', 'Subtítulos traducidos al español');
+    } catch (error: any) {
+      console.error('Translation error:', error);
+      Alert.alert('Error', 'No se pudieron traducir los subtítulos');
+    } finally {
+      setTranslating(false);
+    }
+  };
+
+  const getCurrentSubtitleText = () => {
+    if (!currentSubtitle) return null;
+    
+    if (subtitleLanguage === 'es' && video?.subtitles_translated) {
+      const translated = (video as any).subtitles_translated?.find(
+        (s: any) => s.id === currentSubtitle.id
+      );
+      if (translated?.text_translated) {
+        return translated.text_translated;
+      }
+    }
+    return currentSubtitle.text;
   };
 
   const fetchProgress = async () => {
@@ -441,7 +477,7 @@ export default function VideoPlayer() {
           {/* Subtitle Display */}
           {currentSubtitle && (
             <View style={[styles.subtitleContainer, isLooping && styles.subtitleLooping]}>
-              <Text style={styles.subtitleText}>{currentSubtitle.text}</Text>
+              <Text style={styles.subtitleText}>{getCurrentSubtitleText()}</Text>
             </View>
           )}
         </View>
@@ -506,6 +542,58 @@ export default function VideoPlayer() {
             ))}
           </View>
         </View>
+
+        {/* Subtitle Language Controls */}
+        {video && video.subtitles && video.subtitles.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Idioma de Subtítulos</Text>
+            <View style={styles.languageRow}>
+              <TouchableOpacity
+                style={[styles.langBtn, subtitleLanguage === 'en' && styles.langBtnActive]}
+                onPress={() => setSubtitleLanguage('en')}
+              >
+                <Text style={[styles.langText, subtitleLanguage === 'en' && styles.langTextActive]}>
+                  🇺🇸 English
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.langBtn, 
+                  subtitleLanguage === 'es' && styles.langBtnActive,
+                  !(video as any).subtitles_translated && styles.langBtnDisabled
+                ]}
+                onPress={() => {
+                  if ((video as any).subtitles_translated) {
+                    setSubtitleLanguage('es');
+                  } else {
+                    Alert.alert(
+                      'Traducir Subtítulos',
+                      '¿Deseas traducir los subtítulos al español usando IA?',
+                      [
+                        { text: 'Cancelar', style: 'cancel' },
+                        { text: 'Traducir', onPress: translateSubtitles }
+                      ]
+                    );
+                  }
+                }}
+                disabled={translating}
+              >
+                {translating ? (
+                  <ActivityIndicator size="small" color="#2196F3" />
+                ) : (
+                  <Text style={[
+                    styles.langText, 
+                    subtitleLanguage === 'es' && styles.langTextActive,
+                    !(video as any).subtitles_translated && styles.langTextDisabled
+                  ]}>
+                    🇪🇸 Español {!(video as any).subtitles_translated && '(Traducir)'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         {/* A-B Loop Controls */}
         <View style={styles.section}>
@@ -784,6 +872,37 @@ const styles = StyleSheet.create({
   },
   speedTextActive: {
     color: '#fff',
+  },
+  languageRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  langBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    backgroundColor: '#1E1E1E',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  langBtnActive: {
+    backgroundColor: '#2196F3',
+  },
+  langBtnDisabled: {
+    backgroundColor: '#1E1E1E',
+    borderWidth: 1,
+    borderColor: '#333',
+    borderStyle: 'dashed',
+  },
+  langText: {
+    color: '#888',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  langTextActive: {
+    color: '#fff',
+  },
+  langTextDisabled: {
+    color: '#555',
   },
   loopRow: {
     flexDirection: 'row',

@@ -47,7 +47,10 @@ export default function AdminDashboard() {
 
   const handleLogout = () => {
     logout();
-    router.replace('/');
+    // Use setTimeout to ensure state is cleared before navigation
+    setTimeout(() => {
+      router.replace('/');
+    }, 100);
   };
 
   return (

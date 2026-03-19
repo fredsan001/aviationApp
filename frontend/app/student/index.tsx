@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -53,7 +54,10 @@ export default function StudentHome() {
 
   const handleLogout = () => {
     logout();
-    router.replace('/');
+    // Use setTimeout to ensure state is cleared before navigation
+    setTimeout(() => {
+      router.replace('/');
+    }, 100);
   };
 
   const formatDuration = (seconds: number) => {
@@ -62,30 +66,41 @@ export default function StudentHome() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const renderVideo = ({ item }: { item: Video }) => (
-    <TouchableOpacity
-      style={styles.videoCard}
-      onPress={() => router.push({ pathname: '/student/player', params: { id: item.id } })}
-      activeOpacity={0.8}
-    >
-      <View style={styles.videoThumbnail}>
-        <Ionicons name="play-circle" size={48} color="#fff" />
-        <View style={styles.durationBadge}>
-          <Text style={styles.durationText}>{formatDuration(item.duration)}</Text>
-        </View>
-      </View>
-      <View style={styles.videoInfo}>
-        <Text style={styles.videoTitle} numberOfLines={2}>{item.title}</Text>
-        <Text style={styles.videoCategory}>{item.category}</Text>
-        {item.subtitles.length > 0 && (
-          <View style={styles.subtitleBadge}>
-            <Ionicons name="text" size={12} color="#4CAF50" />
-            <Text style={styles.subtitleCount}>{item.subtitles.length} segments</Text>
+  const renderVideo = ({ item }: { item: Video }) => {
+    const thumbnailUrl = apiService.getVideoThumbnailUrl(item.id);
+    
+    return (
+      <TouchableOpacity
+        style={styles.videoCard}
+        onPress={() => router.push({ pathname: '/student/player', params: { id: item.id } })}
+        activeOpacity={0.8}
+      >
+        <View style={styles.videoThumbnail}>
+          <Image
+            source={{ uri: thumbnailUrl }}
+            style={styles.thumbnailImage}
+            resizeMode="cover"
+          />
+          <View style={styles.playIconOverlay}>
+            <Ionicons name="play-circle" size={48} color="rgba(255,255,255,0.9)" />
           </View>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
+          <View style={styles.durationBadge}>
+            <Text style={styles.durationText}>{formatDuration(item.duration)}</Text>
+          </View>
+        </View>
+        <View style={styles.videoInfo}>
+          <Text style={styles.videoTitle} numberOfLines={2}>{item.title}</Text>
+          <Text style={styles.videoCategory}>{item.category}</Text>
+          {item.subtitles.length > 0 && (
+            <View style={styles.subtitleBadge}>
+              <Ionicons name="text" size={12} color="#4CAF50" />
+              <Text style={styles.subtitleCount}>{item.subtitles.length} segmentos</Text>
+            </View>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   if (loading) {
     return (
@@ -100,8 +115,8 @@ export default function StudentHome() {
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.welcomeText}>Welcome, {clientName}</Text>
-          <Text style={styles.subtitleText}>Practice your aviation English</Text>
+          <Text style={styles.welcomeText}>Bienvenido, {clientName}</Text>
+          <Text style={styles.subtitleText}>Practica tu inglés aeronáutico</Text>
         </View>
         <View style={styles.headerButtons}>
           <TouchableOpacity
@@ -121,7 +136,7 @@ export default function StudentHome() {
         <View style={styles.categoriesContainer}>
           <FlatList
             horizontal
-            data={[{ id: 'all', name: 'All' }, ...categories]}
+            data={[{ id: 'all', name: 'Todos' }, ...categories]}
             renderItem={({ item }) => (
               <TouchableOpacity
                 style={[
@@ -167,8 +182,8 @@ export default function StudentHome() {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="videocam-off-outline" size={64} color="#444" />
-            <Text style={styles.emptyText}>No videos available</Text>
-            <Text style={styles.emptySubtext}>Check back later for new content</Text>
+            <Text style={styles.emptyText}>No hay videos disponibles</Text>
+            <Text style={styles.emptySubtext}>Vuelve más tarde para nuevo contenido</Text>
           </View>
         }
       />
@@ -247,10 +262,24 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   videoThumbnail: {
-    height: 160,
+    height: 180,
     backgroundColor: '#2A2A2A',
+    position: 'relative',
+  },
+  thumbnailImage: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#2A2A2A',
+  },
+  playIconOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.3)',
   },
   durationBadge: {
     position: 'absolute',

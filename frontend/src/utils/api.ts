@@ -70,6 +70,13 @@ export const apiService = {
   getVideoStreamUrl: (id: string) => {
     return `${API_URL}/api/videos/${id}/stream`;
   },
+  getVideoThumbnailUrl: (id: string) => {
+    return `${API_URL}/api/videos/${id}/thumbnail`;
+  },
+  translateSubtitles: async (videoId: string, targetLanguage: string = 'es') => {
+    const response = await api.post(`/videos/${videoId}/translate-subtitles`, { target_language: targetLanguage });
+    return response.data;
+  },
 
   // Subtitles
   addSubtitle: async (videoId: string, subtitle: { start_time: number; end_time: number; text: string }) => {
