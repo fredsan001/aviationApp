@@ -118,6 +118,28 @@ class UserProgressUpdate(BaseModel):
 
 # ============== Helper Functions ==============
 
+def serialize_doc(doc):
+    """Convert MongoDB document to JSON-serializable format"""
+    if doc is None:
+        return None
+    if isinstance(doc, list):
+        return [serialize_doc(d) for d in doc]
+    if isinstance(doc, dict):
+        result = {}
+        for key, value in doc.items():
+            if key == '_id':
+                continue  # Skip MongoDB _id field
+            elif hasattr(value, 'isoformat'):  # datetime
+                result[key] = value.isoformat()
+            elif isinstance(value, list):
+                result[key] = serialize_doc(value)
+            elif isinstance(value, dict):
+                result[key] = serialize_doc(value)
+            else:
+                result[key] = value
+        return result
+    return doc
+
 def generate_access_code():
     """Generate a unique access code"""
     import random
@@ -323,14 +345,14 @@ async def get_videos(category: Optional[str] = None):
     if category:
         query["category"] = category
     videos = await db.videos.find(query).sort("created_at", -1).to_list(1000)
-    return videos
+    return serialize_doc(videos)
 
 @api_router.get("/videos/{video_id}")
 async def get_video(video_id: str):
     video = await db.videos.find_one({"id": video_id})
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
-    return video
+    return serialize_doc(video)
 
 @api_router.put("/videos/{video_id}")
 async def update_video(video_id: str, update: VideoUpdate):
@@ -342,7 +364,8 @@ async def update_video(video_id: str, update: VideoUpdate):
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Video not found")
     
-    return await db.videos.find_one({"id": video_id})
+    video = await db.videos.find_one({"id": video_id})
+    return serialize_doc(video)
 
 @api_router.delete("/videos/{video_id}")
 async def delete_video(video_id: str):
@@ -510,7 +533,7 @@ async def delete_access_code(code_id: str):
 @api_router.get("/progress/{access_code}")
 async def get_user_progress(access_code: str):
     progress = await db.user_progress.find({"access_code": access_code}).to_list(1000)
-    return progress
+    return serialize_doc(progress)
 
 @api_router.post("/progress/{access_code}/{video_id}")
 async def update_user_progress(access_code: str, video_id: str, update: UserProgressUpdate):
@@ -543,10 +566,11 @@ async def update_user_progress(access_code: str, video_id: str, update: UserProg
         )
         await db.user_progress.insert_one(new_progress.dict())
     
-    return await db.user_progress.find_one({
+    result = await db.user_progress.find_one({
         "access_code": access_code,
         "video_id": video_id
     })
+    return serialize_doc(result)
 
 @api_router.get("/favorites/{access_code}")
 async def get_favorites(access_code: str):
@@ -559,7 +583,7 @@ async def get_favorites(access_code: str):
     video_ids = [f['video_id'] for f in favorites]
     videos = await db.videos.find({"id": {"$in": video_ids}}).to_list(1000)
     
-    return videos
+    return serialize_doc(videos)
 
 # Include the router in the main app
 app.include_router(api_router)
