@@ -11,7 +11,6 @@ import {
   Platform,
   ScrollView,
   Keyboard,
-  TouchableWithoutFeedback,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -74,137 +73,126 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <TouchableWithoutFeedback onPress={dismissKeyboard}>
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.keyboardView}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardView}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          onScrollBeginDrag={dismissKeyboard}
         >
-          <ScrollView 
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.header}>
-              <View style={styles.logoContainer}>
-                <Ionicons name="airplane" size={56} color="#2196F3" />
-              </View>
-              <Text style={styles.title}>AeroEnglish</Text>
-              <Text style={styles.subtitle}>Comunicaciones Aeronáuticas</Text>
+          <View style={styles.header}>
+            <View style={styles.logoContainer}>
+              <Ionicons name="airplane" size={56} color="#2196F3" />
             </View>
+            <Text style={styles.title}>AeroEnglish</Text>
+            <Text style={styles.subtitle}>Comunicaciones Aeronáuticas</Text>
+          </View>
 
-            <View style={styles.content}>
-              {!showAdminLogin ? (
-                <>
-                  <TouchableOpacity 
-                    style={styles.inputContainer}
-                    activeOpacity={1}
-                    onPress={() => accessCodeRef.current?.focus()}
-                  >
-                    <Ionicons name="key-outline" size={22} color="#666" style={styles.inputIcon} />
-                    <TextInput
-                      ref={accessCodeRef}
-                      style={styles.input}
-                      placeholder="Código de Acceso"
-                      placeholderTextColor="#666"
-                      value={accessCode}
-                      onChangeText={setAccessCode}
-                      autoCapitalize="characters"
-                      autoCorrect={false}
-                      maxLength={12}
-                      returnKeyType="done"
-                      onSubmitEditing={handleStudentLogin}
-                      blurOnSubmit={true}
-                    />
-                  </TouchableOpacity>
+          <View style={styles.content}>
+            {!showAdminLogin ? (
+              <>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="key-outline" size={22} color="#666" style={styles.inputIcon} />
+                  <TextInput
+                    ref={accessCodeRef}
+                    style={styles.input}
+                    placeholder="Código de Acceso"
+                    placeholderTextColor="#666"
+                    value={accessCode}
+                    onChangeText={setAccessCode}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    maxLength={12}
+                    returnKeyType="done"
+                    onSubmitEditing={handleStudentLogin}
+                  />
+                </View>
 
-                  <TouchableOpacity
-                    style={[styles.button, styles.primaryButton]}
-                    onPress={handleStudentLogin}
-                    disabled={loading}
-                    activeOpacity={0.8}
-                  >
-                    {loading ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <>
-                        <Ionicons name="play" size={22} color="#fff" />
-                        <Text style={styles.buttonText}>Iniciar</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.button, styles.primaryButton]}
+                  onPress={handleStudentLogin}
+                  disabled={loading}
+                  activeOpacity={0.8}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons name="play" size={22} color="#fff" />
+                      <Text style={styles.buttonText}>Iniciar</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={styles.adminLink}
-                    onPress={() => {
-                      setShowAdminLogin(true);
-                      setTimeout(() => adminPasswordRef.current?.focus(), 100);
-                    }}
-                  >
-                    <Ionicons name="settings-outline" size={16} color="#666" />
-                    <Text style={styles.adminLinkText}>Acceso Administrador</Text>
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <>
-                  <TouchableOpacity 
-                    style={styles.inputContainer}
-                    activeOpacity={1}
-                    onPress={() => adminPasswordRef.current?.focus()}
-                  >
-                    <Ionicons name="lock-closed-outline" size={22} color="#666" style={styles.inputIcon} />
-                    <TextInput
-                      ref={adminPasswordRef}
-                      style={styles.input}
-                      placeholder="Contraseña Admin"
-                      placeholderTextColor="#666"
-                      value={adminPassword}
-                      onChangeText={setAdminPassword}
-                      secureTextEntry={true}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      returnKeyType="done"
-                      onSubmitEditing={handleAdminLogin}
-                      blurOnSubmit={true}
-                    />
-                  </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.adminLink}
+                  onPress={() => {
+                    setShowAdminLogin(true);
+                    setTimeout(() => adminPasswordRef.current?.focus(), 300);
+                  }}
+                >
+                  <Ionicons name="settings-outline" size={16} color="#666" />
+                  <Text style={styles.adminLinkText}>Acceso Administrador</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="lock-closed-outline" size={22} color="#666" style={styles.inputIcon} />
+                  <TextInput
+                    ref={adminPasswordRef}
+                    style={styles.input}
+                    placeholder="Contraseña Admin"
+                    placeholderTextColor="#666"
+                    value={adminPassword}
+                    onChangeText={setAdminPassword}
+                    secureTextEntry={true}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="done"
+                    onSubmitEditing={handleAdminLogin}
+                  />
+                </View>
 
-                  <TouchableOpacity
-                    style={[styles.button, styles.adminButton]}
-                    onPress={handleAdminLogin}
-                    disabled={loading}
-                    activeOpacity={0.8}
-                  >
-                    {loading ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <>
-                        <Ionicons name="shield-checkmark" size={22} color="#fff" />
-                        <Text style={styles.buttonText}>Entrar como Admin</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.button, styles.adminButton]}
+                  onPress={handleAdminLogin}
+                  disabled={loading}
+                  activeOpacity={0.8}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons name="shield-checkmark" size={22} color="#fff" />
+                      <Text style={styles.buttonText}>Entrar como Admin</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={styles.adminLink}
-                    onPress={() => {
-                      setShowAdminLogin(false);
-                      setAdminPassword('');
-                    }}
-                  >
-                    <Ionicons name="arrow-back" size={16} color="#666" />
-                    <Text style={styles.adminLinkText}>Volver al Login Estudiante</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
+                <TouchableOpacity
+                  style={styles.adminLink}
+                  onPress={() => {
+                    setShowAdminLogin(false);
+                    setAdminPassword('');
+                  }}
+                >
+                  <Ionicons name="arrow-back" size={16} color="#666" />
+                  <Text style={styles.adminLinkText}>Volver al Login Estudiante</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
 
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>Aprende comunicaciones aeronáuticas mediante repetición</Text>
-            </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </TouchableWithoutFeedback>
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Aprende comunicaciones aeronáuticas mediante repetición</Text>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
