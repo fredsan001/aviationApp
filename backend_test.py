@@ -18,7 +18,7 @@ import tempfile
 from io import BytesIO
 
 # Backend URL from environment
-BACKEND_URL = "https://repeat-learn-speak.preview.emergentagent.com/api"
+BACKEND_URL = "https://skycomm-app.preview.emergentagent.com/api"
 
 # Test constants
 ADMIN_PASSWORD = "aero2024admin"

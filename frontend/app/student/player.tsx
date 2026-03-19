@@ -19,9 +19,9 @@ import { apiService } from '../../src/utils/api';
 import { Video, Subtitle } from '../../src/types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const VIDEO_HEIGHT = 220;
+const VIDEO_HEIGHT = 180;
 
-// Web Video Component using HTML5 video element
+// Web Video Component
 const WebVideoPlayer = ({ 
   videoUrl, 
   onTimeUpdate, 
@@ -30,6 +30,7 @@ const WebVideoPlayer = ({
   onLoad,
   onError,
   videoRef,
+  autoPlay,
 }: {
   videoUrl: string;
   onTimeUpdate: (time: number) => void;
@@ -38,6 +39,7 @@ const WebVideoPlayer = ({
   onLoad: () => void;
   onError: (error: any) => void;
   videoRef: React.RefObject<HTMLVideoElement>;
+  autoPlay?: boolean;
 }) => {
   useEffect(() => {
     const video = videoRef.current;
@@ -50,6 +52,9 @@ const WebVideoPlayer = ({
     const handleLoadedData = () => {
       onLoad();
       onDurationChange(video.duration || 0);
+      if (autoPlay) {
+        video.play().catch(e => console.log('Autoplay blocked:', e));
+      }
     };
     const handleError = (e: any) => onError(e);
 
@@ -70,7 +75,7 @@ const WebVideoPlayer = ({
       video.removeEventListener('canplay', handleLoadedData);
       video.removeEventListener('error', handleError);
     };
-  }, [videoUrl]);
+  }, [videoUrl, autoPlay]);
 
   return (
     <video
@@ -98,11 +103,10 @@ export default function VideoPlayer() {
   const [isFavorite, setIsFavorite] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1.0);
   const [videoError, setVideoError] = useState<string | null>(null);
+  const [autoPlayReady, setAutoPlayReady] = useState(false);
   
-  // A-B Repeat state
-  const [loopStart, setLoopStart] = useState<number | null>(null);
-  const [loopEnd, setLoopEnd] = useState<number | null>(null);
-  const [isLooping, setIsLooping] = useState(false);
+  // Segment repeat state
+  const [selectedSegment, setSelectedSegment] = useState<Subtitle | null>(null);
   
   // Subtitle language state
   const [subtitleLanguage, setSubtitleLanguage] = useState<'en' | 'es'>('en');
@@ -138,20 +142,27 @@ export default function VideoPlayer() {
     }
   }, [currentTime, video]);
 
-  // Handle A-B loop for web
+  // Handle segment repeat
   useEffect(() => {
-    if (isWeb && isLooping && loopStart !== null && loopEnd !== null) {
-      if (currentTime >= loopEnd) {
-        seekTo(loopStart);
-      }
+    if (selectedSegment && currentTime >= selectedSegment.end_time) {
+      seekTo(selectedSegment.start_time);
     }
-  }, [currentTime, isLooping, loopStart, loopEnd, isWeb]);
+  }, [currentTime, selectedSegment]);
+
+  // Auto-play when video is ready
+  useEffect(() => {
+    if (autoPlayReady && !videoLoading && !videoError) {
+      togglePlay();
+      setAutoPlayReady(false);
+    }
+  }, [autoPlayReady, videoLoading, videoError]);
 
   const fetchVideo = async () => {
     try {
       const data = await apiService.getVideo(id!);
       setVideo(data);
       setDuration(data.duration || 0);
+      setAutoPlayReady(true); // Enable autoplay
     } catch (error) {
       Alert.alert('Error', 'No se pudo cargar el video');
       router.back();
@@ -166,7 +177,6 @@ export default function VideoPlayer() {
     setTranslating(true);
     try {
       await apiService.translateSubtitles(video.id, 'es');
-      // Refresh video data to get translations
       const updatedVideo = await apiService.getVideo(video.id);
       setVideo(updatedVideo);
       Alert.alert('Éxito', 'Subtítulos traducidos al español');
@@ -208,7 +218,6 @@ export default function VideoPlayer() {
   const handleExpoPlaybackStatusUpdate = (status: AVPlaybackStatus) => {
     if (!status.isLoaded) {
       if (status.error) {
-        console.error('Expo video error:', status.error);
         setVideoError(status.error);
       }
       return;
@@ -221,14 +230,6 @@ export default function VideoPlayer() {
     
     if (status.durationMillis) {
       setDuration(status.durationMillis / 1000);
-    }
-    
-    // Handle A-B loop
-    if (isLooping && loopStart !== null && loopEnd !== null) {
-      const currentPos = status.positionMillis / 1000;
-      if (currentPos >= loopEnd) {
-        expoVideoRef.current?.setPositionAsync(loopStart * 1000);
-      }
     }
   };
 
@@ -305,40 +306,18 @@ export default function VideoPlayer() {
     }
   };
 
-  const setLoopPoint = (type: 'start' | 'end') => {
-    if (type === 'start') {
-      setLoopStart(currentTime);
-      if (loopEnd !== null && currentTime >= loopEnd) {
-        setLoopEnd(null);
-      }
+  const handleSegmentPress = (subtitle: Subtitle) => {
+    if (selectedSegment?.id === subtitle.id) {
+      // Deselect segment
+      setSelectedSegment(null);
     } else {
-      if (loopStart !== null && currentTime > loopStart) {
-        setLoopEnd(currentTime);
-      } else {
-        Alert.alert('Error', 'El punto B debe estar después del punto A');
+      // Select segment and jump to it
+      setSelectedSegment(subtitle);
+      seekTo(subtitle.start_time);
+      if (!playing) {
+        togglePlay();
       }
     }
-  };
-
-  const toggleLoop = () => {
-    if (loopStart === null || loopEnd === null) {
-      Alert.alert('Configurar Loop', 'Primero establece los puntos A (inicio) y B (fin)');
-      return;
-    }
-    setIsLooping(!isLooping);
-    if (!isLooping) {
-      seekTo(loopStart);
-    }
-  };
-
-  const clearLoop = () => {
-    setLoopStart(null);
-    setLoopEnd(null);
-    setIsLooping(false);
-  };
-
-  const jumpToSubtitle = (subtitle: Subtitle) => {
-    seekTo(subtitle.start_time);
   };
 
   const formatTime = (seconds: number) => {
@@ -367,13 +346,13 @@ export default function VideoPlayer() {
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color="#fff" />
+            <Ionicons name="arrow-back" size={22} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1}>{video.title}</Text>
           <TouchableOpacity style={styles.favoriteBtn} onPress={toggleFavorite}>
             <Ionicons
               name={isFavorite ? 'heart' : 'heart-outline'}
-              size={24}
+              size={22}
               color={isFavorite ? '#F44336' : '#fff'}
             />
           </TouchableOpacity>
@@ -394,6 +373,7 @@ export default function VideoPlayer() {
                   console.error('Web video error:', e);
                   setVideoError('Error al cargar el video');
                 }}
+                autoPlay={true}
               />
             ) : (
               <ExpoVideo
@@ -401,12 +381,11 @@ export default function VideoPlayer() {
                 source={{ uri: videoUrl }}
                 style={styles.video}
                 resizeMode={ResizeMode.CONTAIN}
-                shouldPlay={false}
+                shouldPlay={true}
                 isLooping={false}
                 useNativeControls={false}
                 onPlaybackStatusUpdate={handleExpoPlaybackStatusUpdate}
                 onLoad={(status) => {
-                  console.log('Video loaded:', status);
                   setVideoLoading(false);
                   if ('durationMillis' in status && status.durationMillis) {
                     setDuration(status.durationMillis / 1000);
@@ -417,32 +396,24 @@ export default function VideoPlayer() {
                   setVideoError('Error al cargar el video');
                   setVideoLoading(false);
                 }}
-                onReadyForDisplay={() => {
-                  console.log('Video ready for display');
-                  setVideoLoading(false);
-                }}
               />
             )}
             
-            {/* Video Loading Overlay */}
             {videoLoading && !videoError && (
               <View style={styles.videoOverlay}>
                 <ActivityIndicator size="large" color="#2196F3" />
-                <Text style={styles.loadingVideoText}>Cargando...</Text>
               </View>
             )}
 
-            {/* Error Overlay */}
             {videoError && (
               <View style={styles.videoOverlay}>
-                <Ionicons name="alert-circle" size={48} color="#F44336" />
+                <Ionicons name="alert-circle" size={40} color="#F44336" />
                 <Text style={styles.errorText}>{videoError}</Text>
                 <TouchableOpacity 
                   style={styles.retryButton}
                   onPress={() => {
                     setVideoError(null);
                     setVideoLoading(true);
-                    // Force reload
                     if (expoVideoRef.current) {
                       expoVideoRef.current.unloadAsync().then(() => {
                         expoVideoRef.current?.loadAsync({ uri: videoUrl });
@@ -454,29 +425,11 @@ export default function VideoPlayer() {
                 </TouchableOpacity>
               </View>
             )}
-            
-            {/* Play/Pause Overlay Button */}
-            {!videoLoading && !videoError && !playing && (
-              <TouchableOpacity style={styles.videoOverlayButton} onPress={togglePlay}>
-                <View style={styles.playOverlay}>
-                  <Ionicons name="play" size={40} color="#fff" />
-                </View>
-              </TouchableOpacity>
-            )}
-
-            {/* Tap to pause when playing */}
-            {!videoLoading && !videoError && playing && (
-              <TouchableOpacity 
-                style={styles.videoOverlayButton} 
-                onPress={togglePlay}
-                activeOpacity={1}
-              />
-            )}
           </View>
           
           {/* Subtitle Display */}
           {currentSubtitle && (
-            <View style={[styles.subtitleContainer, isLooping && styles.subtitleLooping]}>
+            <View style={[styles.subtitleContainer, selectedSegment && styles.subtitleLooping]}>
               <Text style={styles.subtitleText}>{getCurrentSubtitleText()}</Text>
             </View>
           )}
@@ -495,11 +448,11 @@ export default function VideoPlayer() {
             }}
           >
             <View style={[styles.progressFill, { width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }]} />
-            {loopStart !== null && duration > 0 && (
-              <View style={[styles.loopMarker, styles.loopMarkerA, { left: `${(loopStart / duration) * 100}%` }]} />
-            )}
-            {loopEnd !== null && duration > 0 && (
-              <View style={[styles.loopMarker, styles.loopMarkerB, { left: `${(loopEnd / duration) * 100}%` }]} />
+            {selectedSegment && duration > 0 && (
+              <>
+                <View style={[styles.loopMarker, styles.loopMarkerA, { left: `${(selectedSegment.start_time / duration) * 100}%` }]} />
+                <View style={[styles.loopMarker, styles.loopMarkerB, { left: `${(selectedSegment.end_time / duration) * 100}%` }]} />
+              </>
             )}
           </TouchableOpacity>
           <View style={styles.timeRow}>
@@ -508,24 +461,22 @@ export default function VideoPlayer() {
           </View>
         </View>
 
-        {/* Main Controls */}
+        {/* Main Controls - Compact */}
         <View style={styles.mainControls}>
           <TouchableOpacity style={styles.controlBtn} onPress={() => seekTo(Math.max(0, currentTime - 5))}>
-            <Ionicons name="play-back" size={28} color="#fff" />
-            <Text style={styles.controlLabel}>-5s</Text>
+            <Ionicons name="play-back" size={20} color="#fff" />
           </TouchableOpacity>
           
           <TouchableOpacity style={styles.playButton} onPress={togglePlay}>
-            <Ionicons name={playing ? 'pause' : 'play'} size={36} color="#fff" />
+            <Ionicons name={playing ? 'pause' : 'play'} size={28} color="#fff" />
           </TouchableOpacity>
           
           <TouchableOpacity style={styles.controlBtn} onPress={() => seekTo(Math.min(duration, currentTime + 5))}>
-            <Ionicons name="play-forward" size={28} color="#fff" />
-            <Text style={styles.controlLabel}>+5s</Text>
+            <Ionicons name="play-forward" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
 
-        {/* Speed Controls */}
+        {/* Speed Controls - Compact */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Velocidad</Text>
           <View style={styles.speedRow}>
@@ -546,14 +497,14 @@ export default function VideoPlayer() {
         {/* Subtitle Language Controls */}
         {video && video.subtitles && video.subtitles.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Idioma de Subtítulos</Text>
+            <Text style={styles.sectionTitle}>Idioma</Text>
             <View style={styles.languageRow}>
               <TouchableOpacity
                 style={[styles.langBtn, subtitleLanguage === 'en' && styles.langBtnActive]}
                 onPress={() => setSubtitleLanguage('en')}
               >
                 <Text style={[styles.langText, subtitleLanguage === 'en' && styles.langTextActive]}>
-                  🇺🇸 English
+                  English
                 </Text>
               </TouchableOpacity>
               
@@ -568,11 +519,11 @@ export default function VideoPlayer() {
                     setSubtitleLanguage('es');
                   } else {
                     Alert.alert(
-                      'Traducir Subtítulos',
-                      '¿Deseas traducir los subtítulos al español usando IA?',
+                      'Traducir',
+                      '¿Traducir subtítulos al español?',
                       [
-                        { text: 'Cancelar', style: 'cancel' },
-                        { text: 'Traducir', onPress: translateSubtitles }
+                        { text: 'No', style: 'cancel' },
+                        { text: 'Sí', onPress: translateSubtitles }
                       ]
                     );
                   }
@@ -585,9 +536,8 @@ export default function VideoPlayer() {
                   <Text style={[
                     styles.langText, 
                     subtitleLanguage === 'es' && styles.langTextActive,
-                    !(video as any).subtitles_translated && styles.langTextDisabled
                   ]}>
-                    🇪🇸 Español {!(video as any).subtitles_translated && '(Traducir)'}
+                    Español
                   </Text>
                 )}
               </TouchableOpacity>
@@ -595,56 +545,34 @@ export default function VideoPlayer() {
           </View>
         )}
 
-        {/* A-B Loop Controls */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Repetición A-B</Text>
-          <View style={styles.loopRow}>
-            <TouchableOpacity
-              style={[styles.loopBtn, loopStart !== null && styles.loopBtnActive]}
-              onPress={() => setLoopPoint('start')}
-            >
-              <Text style={styles.loopBtnText}>A</Text>
-              {loopStart !== null && <Text style={styles.loopTime}>{formatTime(loopStart)}</Text>}
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[styles.loopBtn, loopEnd !== null && styles.loopBtnActive]}
-              onPress={() => setLoopPoint('end')}
-            >
-              <Text style={styles.loopBtnText}>B</Text>
-              {loopEnd !== null && <Text style={styles.loopTime}>{formatTime(loopEnd)}</Text>}
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[styles.loopToggle, isLooping && styles.loopToggleActive]}
-              onPress={toggleLoop}
-            >
-              <Ionicons name="repeat" size={20} color={isLooping ? '#fff' : '#888'} />
-              <Text style={[styles.loopToggleText, isLooping && styles.loopToggleTextActive]}>
-                {isLooping ? 'Activo' : 'Repetir'}
-              </Text>
-            </TouchableOpacity>
-            
-            {(loopStart !== null || loopEnd !== null) && (
-              <TouchableOpacity style={styles.clearBtn} onPress={clearLoop}>
-                <Ionicons name="close-circle" size={24} color="#F44336" />
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-
-        {/* Subtitle Segments */}
+        {/* Segments - Tap to repeat */}
         {video.subtitles.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Segmentos ({video.subtitles.length})</Text>
+            <View style={styles.segmentHeader}>
+              <Text style={styles.sectionTitle}>Segmentos ({video.subtitles.length})</Text>
+              {selectedSegment && (
+                <TouchableOpacity onPress={() => setSelectedSegment(null)}>
+                  <Text style={styles.stopRepeatText}>Detener repetición</Text>
+                </TouchableOpacity>
+              )}
+            </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.subtitleScroll}>
               {video.subtitles.map((subtitle) => (
                 <TouchableOpacity
                   key={subtitle.id}
-                  style={[styles.subtitleChip, currentSubtitle?.id === subtitle.id && styles.subtitleChipActive]}
-                  onPress={() => jumpToSubtitle(subtitle)}
+                  style={[
+                    styles.subtitleChip, 
+                    currentSubtitle?.id === subtitle.id && styles.subtitleChipCurrent,
+                    selectedSegment?.id === subtitle.id && styles.subtitleChipSelected
+                  ]}
+                  onPress={() => handleSegmentPress(subtitle)}
                 >
-                  <Text style={styles.subtitleChipTime}>{formatTime(subtitle.start_time)}</Text>
+                  <View style={styles.chipHeader}>
+                    <Text style={styles.subtitleChipTime}>{formatTime(subtitle.start_time)}</Text>
+                    {selectedSegment?.id === subtitle.id && (
+                      <Ionicons name="repeat" size={12} color="#FF9800" />
+                    )}
+                  </View>
                   <Text style={styles.subtitleChipText} numberOfLines={2}>
                     {subtitle.text}
                   </Text>
@@ -653,17 +581,6 @@ export default function VideoPlayer() {
             </ScrollView>
           </View>
         )}
-
-        {/* Video Info */}
-        <View style={styles.infoSection}>
-          <Text style={styles.videoTitle}>{video.title}</Text>
-          <Text style={styles.videoCategory}>{video.category}</Text>
-          {video.description ? (
-            <Text style={styles.videoDescription}>{video.description}</Text>
-          ) : null}
-        </View>
-
-        <View style={styles.bottomPadding} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -690,26 +607,26 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   backButton: {
-    padding: 8,
+    padding: 6,
   },
   headerTitle: {
     flex: 1,
     color: '#fff',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
-    marginHorizontal: 12,
+    marginHorizontal: 8,
   },
   favoriteBtn: {
-    padding: 8,
+    padding: 6,
   },
   videoWrapper: {
     backgroundColor: '#000',
-    marginHorizontal: 16,
-    borderRadius: 12,
+    marginHorizontal: 12,
+    borderRadius: 10,
     overflow: 'hidden',
   },
   videoContainer: {
@@ -728,46 +645,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.7)',
   },
-  loadingVideoText: {
-    color: '#fff',
-    marginTop: 12,
-    fontSize: 14,
-  },
   errorText: {
     color: '#F44336',
-    marginTop: 12,
-    fontSize: 14,
-    textAlign: 'center',
+    marginTop: 8,
+    fontSize: 13,
   },
   retryButton: {
-    marginTop: 16,
+    marginTop: 12,
     backgroundColor: '#2196F3',
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 6,
   },
   retryText: {
     color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  videoOverlayButton: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  playOverlay: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: 'rgba(33,150,243,0.9)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingLeft: 4,
+    fontSize: 13,
   },
   subtitleContainer: {
     backgroundColor: 'rgba(0,0,0,0.9)',
-    padding: 12,
+    padding: 10,
   },
   subtitleLooping: {
     borderTopWidth: 2,
@@ -775,31 +671,30 @@ const styles = StyleSheet.create({
   },
   subtitleText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 15,
     textAlign: 'center',
     fontWeight: '500',
-    lineHeight: 22,
   },
   progressSection: {
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 12,
   },
   progressBar: {
-    height: 8,
+    height: 6,
     backgroundColor: '#333',
-    borderRadius: 4,
+    borderRadius: 3,
     position: 'relative',
   },
   progressFill: {
     height: '100%',
     backgroundColor: '#2196F3',
-    borderRadius: 4,
+    borderRadius: 3,
   },
   loopMarker: {
     position: 'absolute',
-    top: -4,
-    width: 4,
-    height: 16,
+    top: -3,
+    width: 3,
+    height: 12,
     borderRadius: 2,
   },
   loopMarkerA: {
@@ -811,55 +706,51 @@ const styles = StyleSheet.create({
   timeRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 8,
+    marginTop: 4,
   },
   timeText: {
     color: '#888',
-    fontSize: 13,
+    fontSize: 11,
   },
   mainControls: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 24,
-    gap: 32,
+    paddingVertical: 12,
+    gap: 20,
   },
   controlBtn: {
-    alignItems: 'center',
     padding: 8,
-  },
-  controlLabel: {
-    color: '#888',
-    fontSize: 12,
-    marginTop: 4,
+    backgroundColor: '#1E1E1E',
+    borderRadius: 20,
   },
   playButton: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: '#2196F3',
     justifyContent: 'center',
     alignItems: 'center',
   },
   section: {
     paddingHorizontal: 16,
-    marginBottom: 20,
+    marginBottom: 14,
   },
   sectionTitle: {
     color: '#888',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   speedRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
   },
   speedBtn: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 8,
     backgroundColor: '#1E1E1E',
-    borderRadius: 8,
+    borderRadius: 6,
     alignItems: 'center',
   },
   speedBtnActive: {
@@ -867,7 +758,7 @@ const styles = StyleSheet.create({
   },
   speedText: {
     color: '#888',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
   },
   speedTextActive: {
@@ -875,83 +766,41 @@ const styles = StyleSheet.create({
   },
   languageRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
   },
   langBtn: {
     flex: 1,
-    paddingVertical: 14,
+    paddingVertical: 10,
     backgroundColor: '#1E1E1E',
-    borderRadius: 8,
+    borderRadius: 6,
     alignItems: 'center',
   },
   langBtnActive: {
     backgroundColor: '#2196F3',
   },
   langBtnDisabled: {
-    backgroundColor: '#1E1E1E',
     borderWidth: 1,
     borderColor: '#333',
     borderStyle: 'dashed',
   },
   langText: {
     color: '#888',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
   },
   langTextActive: {
     color: '#fff',
   },
-  langTextDisabled: {
-    color: '#555',
-  },
-  loopRow: {
+  segmentHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 8,
+    marginBottom: 8,
   },
-  loopBtn: {
-    width: 60,
-    height: 52,
-    backgroundColor: '#1E1E1E',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loopBtnActive: {
-    backgroundColor: '#4CAF50',
-  },
-  loopBtnText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  loopTime: {
-    color: '#fff',
-    fontSize: 10,
-  },
-  loopToggle: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1E1E1E',
-    paddingVertical: 14,
-    borderRadius: 8,
-    gap: 8,
-  },
-  loopToggleActive: {
-    backgroundColor: '#FF9800',
-  },
-  loopToggleText: {
-    color: '#888',
-    fontSize: 14,
+  stopRepeatText: {
+    color: '#FF9800',
+    fontSize: 12,
     fontWeight: '600',
-  },
-  loopToggleTextActive: {
-    color: '#fff',
-  },
-  clearBtn: {
-    padding: 8,
   },
   subtitleScroll: {
     marginHorizontal: -16,
@@ -959,48 +808,35 @@ const styles = StyleSheet.create({
   },
   subtitleChip: {
     backgroundColor: '#1E1E1E',
-    padding: 10,
-    borderRadius: 8,
+    padding: 8,
+    borderRadius: 6,
     marginRight: 8,
-    width: 140,
+    width: 130,
   },
-  subtitleChipActive: {
-    backgroundColor: '#2196F3',
+  subtitleChipCurrent: {
+    backgroundColor: '#2A2A2A',
+    borderWidth: 1,
+    borderColor: '#2196F3',
+  },
+  subtitleChipSelected: {
+    backgroundColor: '#2A2A2A',
+    borderWidth: 2,
+    borderColor: '#FF9800',
+  },
+  chipHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
   },
   subtitleChipTime: {
     color: '#4CAF50',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '600',
-    marginBottom: 4,
   },
   subtitleChipText: {
     color: '#fff',
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  infoSection: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#1E1E1E',
-  },
-  videoTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  videoCategory: {
-    color: '#2196F3',
-    fontSize: 14,
-    marginBottom: 8,
-  },
-  videoDescription: {
-    color: '#888',
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  bottomPadding: {
-    height: 40,
+    fontSize: 11,
+    lineHeight: 14,
   },
 });

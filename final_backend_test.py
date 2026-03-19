@@ -6,7 +6,7 @@ Final comprehensive test for AeroEnglish Backend APIs
 import requests
 import json
 
-BACKEND_URL = "https://repeat-learn-speak.preview.emergentagent.com/api"
+BACKEND_URL = "https://skycomm-app.preview.emergentagent.com/api"
 TEST_ACCESS_CODE = "TEST1234"
 
 def test_endpoint(method, endpoint, data=None, files=None):

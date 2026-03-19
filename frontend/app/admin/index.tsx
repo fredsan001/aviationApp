@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -45,12 +46,23 @@ export default function AdminDashboard() {
     },
   ];
 
-  const handleLogout = () => {
-    logout();
-    // Use setTimeout to ensure state is cleared before navigation
-    setTimeout(() => {
-      router.replace('/');
-    }, 100);
+  const handleLogout = async () => {
+    try {
+      logout();
+      // For web, use direct navigation
+      if (Platform.OS === 'web') {
+        window.location.href = '/';
+      } else {
+        router.replace('/');
+      }
+    } catch (error) {
+      console.error('Logout error:', error);
+      if (Platform.OS === 'web') {
+        window.location.href = '/';
+      } else {
+        router.replace('/');
+      }
+    }
   };
 
   return (
