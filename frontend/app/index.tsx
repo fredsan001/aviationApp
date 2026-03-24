@@ -80,9 +80,8 @@ export default function HomeScreen() {
       >
         <ScrollView 
           contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
+          keyboardShouldPersistTaps="always"
           showsVerticalScrollIndicator={false}
-          onScrollBeginDrag={dismissKeyboard}
         >
           <View style={styles.header}>
             <View style={styles.logoContainer}>
@@ -149,12 +148,16 @@ export default function HomeScreen() {
                     placeholder="Contraseña Admin"
                     placeholderTextColor="#666"
                     value={adminPassword}
-                    onChangeText={setAdminPassword}
+                    onChangeText={(text) => setAdminPassword(text)}
                     secureTextEntry={true}
                     autoCapitalize="none"
                     autoCorrect={false}
+                    autoComplete="off"
+                    textContentType="none"
                     returnKeyType="done"
                     onSubmitEditing={handleAdminLogin}
+                    editable={true}
+                    selectTextOnFocus={true}
                   />
                 </View>
 
