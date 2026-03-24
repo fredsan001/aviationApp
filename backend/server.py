@@ -248,7 +248,7 @@ async def root():
 
 # ------------ Admin Auth (Simple) ------------
 
-ADMIN_PASSWORD = "aero2024admin"  # Simple admin password
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "aero2024admin")
 
 class AdminLogin(BaseModel):
     password: str
