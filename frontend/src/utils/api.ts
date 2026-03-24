@@ -131,6 +131,28 @@ export const apiService = {
     const response = await api.get(`/favorites/${accessCode}`);
     return response.data;
   },
+
+  // ATC Simulation
+  getATCScenarios: async () => {
+    const response = await api.get('/atc/scenarios');
+    return response.data;
+  },
+  getATCInitialContact: async (scenarioId: string) => {
+    const response = await api.get(`/atc/initial-contact/${scenarioId}`);
+    return response.data;
+  },
+  simulateATC: async (scenarioId: string, pilotMessage: string, sessionId: string) => {
+    const response = await api.post('/atc/simulate', {
+      scenario_id: scenarioId,
+      pilot_message: pilotMessage,
+      session_id: sessionId,
+    });
+    return response.data;
+  },
+  resetATCSession: async (sessionId: string, scenarioId: string) => {
+    const response = await api.post(`/atc/reset-session?session_id=${sessionId}&scenario_id=${scenarioId}`);
+    return response.data;
+  },
 };
 
 export default api;

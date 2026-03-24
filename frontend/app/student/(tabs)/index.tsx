@@ -8,23 +8,22 @@ import {
   ActivityIndicator,
   RefreshControl,
   Image,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import { useAppStore } from '../../src/store/appStore';
-import { apiService } from '../../src/utils/api';
-import { Video, Category } from '../../src/types';
+import { useAppStore } from '../../../src/store/appStore';
+import { apiService } from '../../../src/utils/api';
+import { Video, Category } from '../../../src/types';
 
-export default function StudentHome() {
+export default function StudentVideos() {
   const [videos, setVideos] = useState<Video[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
-  const { clientName, accessCode, logout } = useAppStore();
+  const { clientName } = useAppStore();
 
   const fetchData = async () => {
     try {
@@ -51,25 +50,6 @@ export default function StudentHome() {
   const onRefresh = () => {
     setRefreshing(true);
     fetchData();
-  };
-
-  const handleLogout = async () => {
-    try {
-      logout();
-      // For web, use direct navigation
-      if (Platform.OS === 'web') {
-        window.location.href = '/';
-      } else {
-        router.replace('/');
-      }
-    } catch (error) {
-      console.error('Logout error:', error);
-      if (Platform.OS === 'web') {
-        window.location.href = '/';
-      } else {
-        router.replace('/');
-      }
-    }
   };
 
   const formatDuration = (seconds: number) => {
@@ -130,17 +110,12 @@ export default function StudentHome() {
           <Text style={styles.welcomeText}>Bienvenido, {clientName}</Text>
           <Text style={styles.subtitleText}>Practica tu inglés aeronáutico</Text>
         </View>
-        <View style={styles.headerButtons}>
-          <TouchableOpacity
-            style={styles.iconButton}
-            onPress={() => router.push('/student/favorites')}
-          >
-            <Ionicons name="heart" size={24} color="#F44336" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.iconButton} onPress={handleLogout}>
-            <Ionicons name="log-out-outline" size={24} color="#888" />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={styles.iconButton}
+          onPress={() => router.push('/student/favorites')}
+        >
+          <Ionicons name="heart" size={24} color="#F44336" />
+        </TouchableOpacity>
       </View>
 
       {/* Categories */}
@@ -230,10 +205,6 @@ const styles = StyleSheet.create({
     color: '#888',
     fontSize: 14,
     marginTop: 4,
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    gap: 8,
   },
   iconButton: {
     padding: 8,

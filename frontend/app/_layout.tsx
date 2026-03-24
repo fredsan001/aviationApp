@@ -1,7 +1,7 @@
-import React, { useEffect } from 'react';
-import { Stack, router, usePathname, useRootNavigationState } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { Stack, router, usePathname, useRootNavigationState, Slot } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { useAppStore } from '../src/store/appStore';
 
 export default function RootLayout() {
@@ -9,13 +9,19 @@ export default function RootLayout() {
   const { isAdmin, accessCode } = useAppStore();
   const pathname = usePathname();
   const navigationState = useRootNavigationState();
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    loadStoredData();
+    const init = async () => {
+      await loadStoredData();
+      setIsLoading(false);
+    };
+    init();
   }, []);
 
   // Redirect to home if not authenticated and trying to access protected routes
   useEffect(() => {
+    if (isLoading) return; // Wait for data to load
     if (!navigationState?.key) return; // Wait for navigation to be ready
     
     const isProtectedRoute = pathname.startsWith('/student') || pathname.startsWith('/admin');
@@ -25,7 +31,16 @@ export default function RootLayout() {
       // User tried to access protected route without auth
       router.replace('/');
     }
-  }, [pathname, isAdmin, accessCode, navigationState?.key]);
+  }, [pathname, isAdmin, accessCode, navigationState?.key, isLoading]);
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <StatusBar style="light" />
+        <ActivityIndicator size="large" color="#2196F3" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -57,5 +72,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#121212',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

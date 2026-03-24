@@ -18,10 +18,9 @@ export default function StudentLayout() {
       }}
     >
       <Stack.Screen 
-        name="index" 
+        name="(tabs)" 
         options={{ 
-          title: 'AeroEnglish',
-          headerShown: true,
+          headerShown: false,
         }} 
       />
       <Stack.Screen 
@@ -34,7 +33,7 @@ export default function StudentLayout() {
       <Stack.Screen 
         name="favorites" 
         options={{ 
-          title: 'Favorites',
+          title: 'Favoritos',
         }} 
       />
     </Stack>

@@ -774,6 +774,246 @@ async def get_favorites(access_code: str):
     
     return serialize_doc(videos)
 
+# ============== ATC Simulation ==============
+
+from emergentintegrations.llm.chat import LlmChat, UserMessage
+from emergentintegrations.llm.openai import OpenAITextToSpeech
+
+# ATC Simulation scenarios
+ATC_SCENARIOS = {
+    "startup": {
+        "name": "Startup & Taxi",
+        "description": "Solicita permiso de encendido y taxi hacia la pista",
+        "phase": "ground",
+        "airport": "KJFK",
+        "initial_situation": "You are parked at Gate B7 at JFK International Airport. Your aircraft is a Cessna 172 with callsign N12345. You need to request startup clearance and taxi to runway 31L.",
+        "atc_facility": "JFK Ground",
+        "frequency": "121.900"
+    },
+    "takeoff": {
+        "name": "Takeoff Clearance", 
+        "description": "Solicita autorización de despegue",
+        "phase": "departure",
+        "airport": "KLAX",
+        "initial_situation": "You are holding short of runway 25L at Los Angeles International. Your aircraft is a Cessna 172 with callsign N12345. You've completed your run-up and are ready for takeoff.",
+        "atc_facility": "LAX Tower",
+        "frequency": "133.900"
+    },
+    "cruise": {
+        "name": "Cruise & Flight Following",
+        "description": "Comunicaciones en ruta con ATC",
+        "phase": "enroute", 
+        "airport": "Enroute",
+        "initial_situation": "You are cruising at 8,500 feet over the Central Valley, California. Your aircraft is a Cessna 172 with callsign N12345 receiving VFR flight following from Oakland Center.",
+        "atc_facility": "Oakland Center",
+        "frequency": "127.800"
+    },
+    "approach": {
+        "name": "Approach & Landing",
+        "description": "Aproximación y aterrizaje en aeropuerto controlado",
+        "phase": "arrival",
+        "airport": "KSFO",
+        "initial_situation": "You are 15 miles southeast of San Francisco International at 4,500 feet. Your aircraft is a Cessna 172 with callsign N12345. You need to contact approach for landing clearance.",
+        "atc_facility": "NorCal Approach", 
+        "frequency": "135.650"
+    },
+    "pattern": {
+        "name": "Traffic Pattern",
+        "description": "Circuito de tráfico en aeropuerto no controlado",
+        "phase": "pattern",
+        "airport": "KPAO",
+        "initial_situation": "You are 5 miles south of Palo Alto Airport at 1,500 feet. Your aircraft is a Cessna 172 with callsign N12345. This is a non-towered airport and you need to announce your intentions on CTAF.",
+        "atc_facility": "Palo Alto Traffic (CTAF)",
+        "frequency": "118.600"
+    },
+    "emergency_engine": {
+        "name": "Engine Failure",
+        "description": "Simulación de falla de motor",
+        "phase": "emergency",
+        "airport": "Enroute",
+        "initial_situation": "You are at 6,000 feet over mountainous terrain when your engine begins to sputter and lose power. Your aircraft is a Cessna 172 with callsign N12345. You need to declare an emergency.",
+        "atc_facility": "Seattle Center",
+        "frequency": "128.950"
+    },
+    "emergency_lost": {
+        "name": "Lost & Disoriented",
+        "description": "Perdido y desorientado - solicitar asistencia",
+        "phase": "emergency",
+        "airport": "Unknown",
+        "initial_situation": "You've become disoriented after encountering unexpected weather. Visibility has dropped and you're unsure of your position. Your aircraft is a Cessna 172 with callsign N12345.",
+        "atc_facility": "Los Angeles Center",
+        "frequency": "134.500"
+    }
+}
+
+ATC_SYSTEM_PROMPT = """You are a highly realistic Air Traffic Controller (ATC) simulator. Your role is to provide authentic, professional ATC communications exactly as they would sound in real aviation.
+
+CRITICAL RULES:
+1. Use ONLY standard FAA/ICAO phraseology
+2. Keep responses brief and professional - real ATC communications are short
+3. Use proper phonetic alphabet (Alpha, Bravo, Charlie, etc.)
+4. Include realistic callsigns, altimeter settings, runway numbers
+5. Add natural radio artifacts in your responses like "uhh" occasionally
+6. If pilot makes mistakes, correct them professionally
+7. Respond contextually to the flight phase and situation
+8. Use numbers pronounced individually (runway "three one left" not "thirty-one left")
+9. Include squawk codes, frequencies, and headings when appropriate
+
+CURRENT SCENARIO:
+Airport/Location: {airport}
+ATC Facility: {atc_facility}  
+Frequency: {frequency} MHz
+Flight Phase: {phase}
+Situation: {initial_situation}
+
+Aircraft: Cessna 172, Callsign November One Two Three Four Five (N12345)
+
+Respond ONLY as the ATC controller. Keep responses under 50 words typically. Be realistic and professional."""
+
+class ATCSimulationRequest(BaseModel):
+    scenario_id: str
+    pilot_message: str
+    session_id: str
+
+class ATCSimulationResponse(BaseModel):
+    atc_response: str
+    audio_base64: Optional[str] = None
+    frequency: str
+    atc_facility: str
+
+# Store for ATC chat sessions
+atc_sessions: dict = {}
+
+@api_router.get("/atc/scenarios")
+async def get_atc_scenarios():
+    """Get all available ATC simulation scenarios"""
+    scenarios = []
+    for key, scenario in ATC_SCENARIOS.items():
+        scenarios.append({
+            "id": key,
+            "name": scenario["name"],
+            "description": scenario["description"],
+            "phase": scenario["phase"],
+            "airport": scenario["airport"],
+            "atc_facility": scenario["atc_facility"],
+            "frequency": scenario["frequency"]
+        })
+    return scenarios
+
+@api_router.post("/atc/simulate")
+async def simulate_atc(request: ATCSimulationRequest):
+    """Process pilot communication and get ATC response"""
+    try:
+        scenario = ATC_SCENARIOS.get(request.scenario_id)
+        if not scenario:
+            raise HTTPException(status_code=404, detail="Scenario not found")
+        
+        api_key = os.getenv("EMERGENT_LLM_KEY")
+        if not api_key:
+            raise HTTPException(status_code=500, detail="LLM API key not configured")
+        
+        # Create or get existing chat session
+        session_key = f"{request.session_id}_{request.scenario_id}"
+        
+        if session_key not in atc_sessions:
+            system_message = ATC_SYSTEM_PROMPT.format(
+                airport=scenario["airport"],
+                atc_facility=scenario["atc_facility"],
+                frequency=scenario["frequency"],
+                phase=scenario["phase"],
+                initial_situation=scenario["initial_situation"]
+            )
+            
+            chat = LlmChat(
+                api_key=api_key,
+                session_id=session_key,
+                system_message=system_message
+            ).with_model("openai", "gpt-4.1")
+            
+            atc_sessions[session_key] = chat
+        else:
+            chat = atc_sessions[session_key]
+        
+        # Send pilot message and get ATC response
+        user_message = UserMessage(text=f"Pilot transmission: {request.pilot_message}")
+        atc_response = await chat.send_message(user_message)
+        
+        # Generate audio with TTS
+        audio_base64 = None
+        try:
+            tts = OpenAITextToSpeech(api_key=api_key)
+            audio_bytes = await tts.generate_speech(
+                text=atc_response,
+                model="tts-1",
+                voice="onyx",  # Deep, authoritative voice for ATC
+                speed=1.1  # Slightly faster like real ATC
+            )
+            audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+        except Exception as e:
+            logger.error(f"TTS generation failed: {e}")
+        
+        return ATCSimulationResponse(
+            atc_response=atc_response,
+            audio_base64=audio_base64,
+            frequency=scenario["frequency"],
+            atc_facility=scenario["atc_facility"]
+        )
+        
+    except Exception as e:
+        logger.error(f"ATC simulation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/atc/reset-session")
+async def reset_atc_session(session_id: str, scenario_id: str):
+    """Reset an ATC simulation session"""
+    session_key = f"{session_id}_{scenario_id}"
+    if session_key in atc_sessions:
+        del atc_sessions[session_key]
+    return {"message": "Session reset"}
+
+@api_router.get("/atc/initial-contact/{scenario_id}")
+async def get_initial_contact(scenario_id: str):
+    """Get the initial ATC contact for a scenario"""
+    scenario = ATC_SCENARIOS.get(scenario_id)
+    if not scenario:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+    
+    # Initial ATC greeting based on scenario
+    initial_messages = {
+        "startup": f"{scenario['atc_facility']}, {scenario['frequency']}, ATIS information Alpha current.",
+        "takeoff": f"N12345, {scenario['atc_facility']}, runway 25L, cleared for takeoff, wind 270 at 8.",
+        "cruise": f"N12345, Oakland Center, radar contact, 8,500, squawk 4521.",
+        "approach": f"N12345, NorCal Approach, squawk 0425, report airport in sight.",
+        "pattern": f"Palo Alto Traffic, Cessna 12345, 5 miles south, inbound for landing runway 31.",
+        "emergency_engine": f"All aircraft, maintain current altitude and heading. Emergency aircraft has priority.",
+        "emergency_lost": f"Aircraft calling, say again callsign and souls on board."
+    }
+    
+    initial_msg = initial_messages.get(scenario_id, f"{scenario['atc_facility']}, standby.")
+    
+    # Generate audio for initial contact
+    api_key = os.getenv("EMERGENT_LLM_KEY")
+    audio_base64 = None
+    
+    if api_key:
+        try:
+            tts = OpenAITextToSpeech(api_key=api_key)
+            audio_bytes = await tts.generate_speech(
+                text=initial_msg,
+                model="tts-1",
+                voice="onyx",
+                speed=1.1
+            )
+            audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+        except Exception as e:
+            logger.error(f"Initial contact TTS failed: {e}")
+    
+    return {
+        "message": initial_msg,
+        "audio_base64": audio_base64,
+        "scenario": scenario
+    }
+
 # Include the router in the main app
 app.include_router(api_router)
 
