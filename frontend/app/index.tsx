@@ -48,22 +48,49 @@ export default function HomeScreen() {
     }
   };
 
-  const handleAdminLogin = async () => {
+  const handleAdminLogin = async (password?: string) => {
+    const pwd = password || adminPassword;
     Keyboard.dismiss();
-    if (!adminPassword.trim()) {
+    if (!pwd.trim()) {
       Alert.alert('Error', 'Por favor ingresa la contraseña de administrador');
       return;
     }
     
     setLoading(true);
     try {
-      await apiService.adminLogin(adminPassword);
+      await apiService.adminLogin(pwd);
       setAdmin(true);
       router.replace('/admin');
     } catch (error: any) {
       Alert.alert('Error', error.response?.data?.detail || 'Contraseña inválida');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Función para mostrar el prompt nativo de iOS
+  const showAdminPrompt = () => {
+    if (Platform.OS === 'ios') {
+      Alert.prompt(
+        'Acceso Administrador',
+        'Ingresa la contraseña de administrador',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { 
+            text: 'Entrar', 
+            onPress: (password) => {
+              if (password) {
+                handleAdminLogin(password);
+              }
+            }
+          },
+        ],
+        'secure-text',
+        '',
+        'default'
+      );
+    } else {
+      setShowAdminLogin(true);
     }
   };
 
@@ -129,10 +156,7 @@ export default function HomeScreen() {
 
                 <TouchableOpacity
                   style={styles.adminLink}
-                  onPress={() => {
-                    setShowAdminLogin(true);
-                    setTimeout(() => adminPasswordRef.current?.focus(), 300);
-                  }}
+                  onPress={showAdminPrompt}
                 >
                   <Ionicons name="settings-outline" size={16} color="#666" />
                   <Text style={styles.adminLinkText}>Acceso Administrador</Text>
