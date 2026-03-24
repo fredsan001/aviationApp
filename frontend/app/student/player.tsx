@@ -29,6 +29,7 @@ const WebVideoPlayer = ({
   onPlayingChange,
   onLoad,
   onError,
+  onEnded,
   videoRef,
   autoPlay,
 }: {
@@ -38,6 +39,7 @@ const WebVideoPlayer = ({
   onPlayingChange: (playing: boolean) => void;
   onLoad: () => void;
   onError: (error: any) => void;
+  onEnded?: () => void;
   videoRef: React.RefObject<HTMLVideoElement>;
   autoPlay?: boolean;
 }) => {
@@ -57,6 +59,10 @@ const WebVideoPlayer = ({
       }
     };
     const handleError = (e: any) => onError(e);
+    const handleEnded = () => {
+      onPlayingChange(false);
+      if (onEnded) onEnded();
+    };
 
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('durationchange', handleDurationChange);
@@ -65,6 +71,7 @@ const WebVideoPlayer = ({
     video.addEventListener('loadeddata', handleLoadedData);
     video.addEventListener('canplay', handleLoadedData);
     video.addEventListener('error', handleError);
+    video.addEventListener('ended', handleEnded);
 
     return () => {
       video.removeEventListener('timeupdate', handleTimeUpdate);
@@ -74,8 +81,9 @@ const WebVideoPlayer = ({
       video.removeEventListener('loadeddata', handleLoadedData);
       video.removeEventListener('canplay', handleLoadedData);
       video.removeEventListener('error', handleError);
+      video.removeEventListener('ended', handleEnded);
     };
-  }, [videoUrl, autoPlay]);
+  }, [videoUrl, autoPlay, onEnded]);
 
   return (
     <video
@@ -231,6 +239,31 @@ export default function VideoPlayer() {
     if (status.durationMillis) {
       setDuration(status.durationMillis / 1000);
     }
+
+    // Mark as watched when video finishes
+    if (status.didJustFinish) {
+      markAsWatched();
+    }
+  };
+
+  // Mark video as watched
+  const markAsWatched = async () => {
+    if (!accessCode || !id) return;
+    try {
+      await apiService.updateProgress(accessCode, id, { 
+        watched_count: 1,
+        completed: true 
+      });
+      console.log('Video marked as watched');
+    } catch (error) {
+      console.error('Error marking video as watched:', error);
+    }
+  };
+
+  // Handle web video ended
+  const handleWebVideoEnded = () => {
+    setPlaying(false);
+    markAsWatched();
   };
 
   const togglePlay = async () => {
@@ -373,6 +406,7 @@ export default function VideoPlayer() {
                   console.error('Web video error:', e);
                   setVideoError('Error al cargar el video');
                 }}
+                onEnded={markAsWatched}
                 autoPlay={true}
               />
             ) : (

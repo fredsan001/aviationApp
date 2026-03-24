@@ -9,7 +9,8 @@ export interface Video {
   id: string;
   title: string;
   description: string;
-  category: string;
+  category: string;  // For backwards compatibility
+  categories: string[];  // Multiple categories
   video_filename: string;
   duration: number;
   subtitles: Subtitle[];

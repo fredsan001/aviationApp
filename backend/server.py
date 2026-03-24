@@ -58,16 +58,19 @@ class Video(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     is_processing: bool = False
     processing_status: str = ""
+    categories: List[str] = []  # Multiple categories support
 
 class VideoCreate(BaseModel):
     title: str
     description: str = ""
     category: str = "General"
+    categories: List[str] = []
 
 class VideoUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     category: Optional[str] = None
+    categories: Optional[List[str]] = None
     subtitles: Optional[List[dict]] = None
 
 class SubtitleCreate(BaseModel):
@@ -288,10 +291,21 @@ async def create_video(
     title: str = Form(...),
     description: str = Form(""),
     category: str = Form("General"),
+    categories: str = Form("[]"),  # JSON string of categories array
     auto_transcribe: str = Form("true"),
     file: UploadFile = File(...)
 ):
     """Upload a video with optional automatic transcription"""
+    
+    # Parse categories from JSON string
+    try:
+        categories_list = json.loads(categories) if categories else []
+    except:
+        categories_list = [category] if category else []
+    
+    # Ensure at least one category
+    if not categories_list and category:
+        categories_list = [category]
     
     # Parse auto_transcribe as boolean
     should_transcribe = auto_transcribe.lower() in ['true', '1', 'yes']
@@ -339,6 +353,7 @@ async def create_video(
         title=title,
         description=description,
         category=category,
+        categories=categories_list,  # Multiple categories
         video_filename=unique_filename,
         duration=duration,
         is_processing=should_transcribe,
@@ -739,8 +754,18 @@ async def update_user_progress(access_code: str, video_id: str, update: UserProg
     })
     
     if progress:
-        update_data = {k: v for k, v in update.dict().items() if v is not None}
+        update_data = {}
+        if update.last_position is not None:
+            update_data["last_position"] = update.last_position
+        if update.is_favorite is not None:
+            update_data["is_favorite"] = update.is_favorite
+        if update.completed is not None:
+            update_data["completed"] = update.completed
+        if update.watched_count is not None:
+            # Increment watched_count instead of replacing
+            update_data["watched_count"] = progress.get("watched_count", 0) + update.watched_count
         update_data["updated_at"] = datetime.utcnow()
+        
         await db.user_progress.update_one(
             {"access_code": access_code, "video_id": video_id},
             {"$set": update_data}
@@ -749,7 +774,7 @@ async def update_user_progress(access_code: str, video_id: str, update: UserProg
         new_progress = UserProgress(
             access_code=access_code,
             video_id=video_id,
-            watched_count=update.watched_count or 0,
+            watched_count=update.watched_count or 1,
             last_position=update.last_position or 0,
             is_favorite=update.is_favorite or False,
             completed=update.completed or False
