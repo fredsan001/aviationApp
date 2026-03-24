@@ -16,23 +16,42 @@ import { useAppStore } from '../../../src/store/appStore';
 import { apiService } from '../../../src/utils/api';
 import { Video, Category } from '../../../src/types';
 
+interface VideoWithProgress extends Video {
+  watched_count?: number;
+  completed?: boolean;
+  last_position?: number;
+}
+
 export default function StudentVideos() {
-  const [videos, setVideos] = useState<Video[]>([]);
+  const [videos, setVideos] = useState<VideoWithProgress[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [watchedVideoIds, setWatchedVideoIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
-  const { clientName } = useAppStore();
+  const { clientName, accessCode } = useAppStore();
 
   const fetchData = async () => {
     try {
-      const [videosData, categoriesData] = await Promise.all([
-        apiService.getVideos(selectedCategory || undefined),
-        apiService.getCategories(),
-      ]);
-      setVideos(videosData.filter((v: Video) => !v.is_processing));
-      setCategories(categoriesData);
+      // Special handling for "Vistos" category
+      if (selectedCategory === '__watched__') {
+        const watchedVideos = await apiService.getWatchedVideos(accessCode);
+        setVideos(watchedVideos);
+      } else {
+        const [videosData, categoriesData] = await Promise.all([
+          apiService.getVideos(selectedCategory || undefined),
+          apiService.getCategories(),
+        ]);
+        setVideos(videosData.filter((v: Video) => !v.is_processing));
+        setCategories(categoriesData);
+      }
+      
+      // Also fetch watched videos to mark them
+      if (accessCode) {
+        const watched = await apiService.getWatchedVideos(accessCode);
+        setWatchedVideoIds(new Set(watched.map((v: VideoWithProgress) => v.id)));
+      }
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -44,7 +63,7 @@ export default function StudentVideos() {
   useFocusEffect(
     useCallback(() => {
       fetchData();
-    }, [selectedCategory])
+    }, [selectedCategory, accessCode])
   );
 
   const onRefresh = () => {
@@ -58,8 +77,9 @@ export default function StudentVideos() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const renderVideo = ({ item }: { item: Video }) => {
+  const renderVideo = ({ item }: { item: VideoWithProgress }) => {
     const thumbnailUrl = apiService.getVideoThumbnailUrl(item.id);
+    const isWatched = watchedVideoIds.has(item.id) || item.watched_count && item.watched_count > 0;
     
     return (
       <TouchableOpacity
@@ -79,20 +99,41 @@ export default function StudentVideos() {
           <View style={styles.durationBadge}>
             <Text style={styles.durationText}>{formatDuration(item.duration)}</Text>
           </View>
+          {isWatched && (
+            <View style={styles.watchedBadge}>
+              <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
+              <Text style={styles.watchedText}>Visto</Text>
+            </View>
+          )}
         </View>
         <View style={styles.videoInfo}>
           <Text style={styles.videoTitle} numberOfLines={2}>{item.title}</Text>
           <Text style={styles.videoCategory}>{item.category}</Text>
-          {item.subtitles.length > 0 && (
-            <View style={styles.subtitleBadge}>
-              <Ionicons name="text" size={12} color="#4CAF50" />
-              <Text style={styles.subtitleCount}>{item.subtitles.length} segmentos</Text>
-            </View>
-          )}
+          <View style={styles.videoMeta}>
+            {item.subtitles && item.subtitles.length > 0 && (
+              <View style={styles.subtitleBadge}>
+                <Ionicons name="text" size={12} color="#4CAF50" />
+                <Text style={styles.subtitleCount}>{item.subtitles.length} segmentos</Text>
+              </View>
+            )}
+            {item.watched_count && item.watched_count > 0 && (
+              <View style={styles.watchCountBadge}>
+                <Ionicons name="eye" size={12} color="#2196F3" />
+                <Text style={styles.watchCountText}>{item.watched_count}x</Text>
+              </View>
+            )}
+          </View>
         </View>
       </TouchableOpacity>
     );
   };
+
+  // Build categories list with special "Vistos" category
+  const allCategories = [
+    { id: 'all', name: 'Todos' },
+    { id: '__watched__', name: 'Vistos', icon: 'eye' },
+    ...categories
+  ];
 
   if (loading) {
     return (
@@ -119,39 +160,58 @@ export default function StudentVideos() {
       </View>
 
       {/* Categories */}
-      {categories.length > 0 && (
-        <View style={styles.categoriesContainer}>
-          <FlatList
-            horizontal
-            data={[{ id: 'all', name: 'Todos' }, ...categories]}
-            renderItem={({ item }) => (
+      <View style={styles.categoriesContainer}>
+        <FlatList
+          horizontal
+          data={allCategories}
+          renderItem={({ item }) => {
+            const isActive = (item.id === 'all' && !selectedCategory) || 
+                            selectedCategory === item.id ||
+                            (item.id !== 'all' && item.id !== '__watched__' && selectedCategory === item.name);
+            
+            return (
               <TouchableOpacity
                 style={[
                   styles.categoryChip,
-                  (item.id === 'all' && !selectedCategory) || selectedCategory === item.name
-                    ? styles.categoryChipActive
-                    : null,
+                  isActive && styles.categoryChipActive,
+                  item.id === '__watched__' && styles.watchedChip,
+                  item.id === '__watched__' && isActive && styles.watchedChipActive,
                 ]}
-                onPress={() => setSelectedCategory(item.id === 'all' ? null : item.name)}
+                onPress={() => {
+                  if (item.id === 'all') {
+                    setSelectedCategory(null);
+                  } else if (item.id === '__watched__') {
+                    setSelectedCategory('__watched__');
+                  } else {
+                    setSelectedCategory(item.name);
+                  }
+                }}
               >
+                {item.id === '__watched__' && (
+                  <Ionicons 
+                    name="eye" 
+                    size={14} 
+                    color={isActive ? '#fff' : '#4CAF50'} 
+                    style={{ marginRight: 4 }}
+                  />
+                )}
                 <Text
                   style={[
                     styles.categoryChipText,
-                    (item.id === 'all' && !selectedCategory) || selectedCategory === item.name
-                      ? styles.categoryChipTextActive
-                      : null,
+                    isActive && styles.categoryChipTextActive,
+                    item.id === '__watched__' && !isActive && styles.watchedChipText,
                   ]}
                 >
                   {item.name}
                 </Text>
               </TouchableOpacity>
-            )}
-            keyExtractor={(item) => item.id}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.categoriesList}
-          />
-        </View>
-      )}
+            );
+          }}
+          keyExtractor={(item) => item.id}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoriesList}
+        />
+      </View>
 
       {/* Videos */}
       <FlatList
@@ -168,9 +228,21 @@ export default function StudentVideos() {
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons name="videocam-off-outline" size={64} color="#444" />
-            <Text style={styles.emptyText}>No hay videos disponibles</Text>
-            <Text style={styles.emptySubtext}>Vuelve más tarde para nuevo contenido</Text>
+            <Ionicons 
+              name={selectedCategory === '__watched__' ? "eye-off-outline" : "videocam-off-outline"} 
+              size={64} 
+              color="#444" 
+            />
+            <Text style={styles.emptyText}>
+              {selectedCategory === '__watched__' 
+                ? 'No has visto ningún video aún' 
+                : 'No hay videos disponibles'}
+            </Text>
+            <Text style={styles.emptySubtext}>
+              {selectedCategory === '__watched__'
+                ? 'Los videos que veas aparecerán aquí'
+                : 'Vuelve más tarde para nuevo contenido'}
+            </Text>
           </View>
         }
       />
@@ -294,12 +366,55 @@ const styles = StyleSheet.create({
   subtitleBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
     gap: 4,
   },
   subtitleCount: {
     color: '#4CAF50',
     fontSize: 12,
+  },
+  videoMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: 12,
+  },
+  watchedBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  watchedText: {
+    color: '#4CAF50',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  watchCountBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  watchCountText: {
+    color: '#2196F3',
+    fontSize: 12,
+  },
+  watchedChip: {
+    backgroundColor: '#1E3D1F',
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  watchedChipActive: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
+  },
+  watchedChipText: {
+    color: '#4CAF50',
   },
   emptyContainer: {
     flex: 1,

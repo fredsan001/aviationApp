@@ -131,6 +131,10 @@ export const apiService = {
     const response = await api.get(`/favorites/${accessCode}`);
     return response.data;
   },
+  getWatchedVideos: async (accessCode: string) => {
+    const response = await api.get(`/watched/${accessCode}`);
+    return response.data;
+  },
 
   // ATC Simulation
   getATCScenarios: async () => {

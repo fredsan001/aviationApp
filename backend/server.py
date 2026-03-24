@@ -774,6 +774,34 @@ async def get_favorites(access_code: str):
     
     return serialize_doc(videos)
 
+@api_router.get("/watched/{access_code}")
+async def get_watched_videos(access_code: str):
+    """Get all videos the user has watched (watched_count > 0 or completed)"""
+    watched = await db.user_progress.find({
+        "access_code": access_code,
+        "$or": [
+            {"watched_count": {"$gt": 0}},
+            {"completed": True}
+        ]
+    }).to_list(1000)
+    
+    # Get video details for watched videos
+    video_ids = [w['video_id'] for w in watched]
+    videos = await db.videos.find({"id": {"$in": video_ids}}).to_list(1000)
+    
+    # Add progress info to each video
+    progress_map = {w['video_id']: w for w in watched}
+    result = []
+    for video in videos:
+        video_data = serialize_doc(video)
+        progress = progress_map.get(video['id'], {})
+        video_data['watched_count'] = progress.get('watched_count', 0)
+        video_data['completed'] = progress.get('completed', False)
+        video_data['last_position'] = progress.get('last_position', 0)
+        result.append(video_data)
+    
+    return result
+
 # ============== ATC Simulation ==============
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage

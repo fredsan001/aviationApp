@@ -8,6 +8,7 @@ import {
   Alert,
   ActivityIndicator,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -45,26 +46,45 @@ export default function ManageVideos() {
   };
 
   const handleDelete = (video: Video) => {
-    Alert.alert(
-      'Delete Video',
-      `Are you sure you want to delete "${video.title}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await apiService.deleteVideo(video.id);
-              setVideos(videos.filter(v => v.id !== video.id));
-              Alert.alert('Success', 'Video deleted');
-            } catch (error) {
-              Alert.alert('Error', 'Failed to delete video');
-            }
+    if (Platform.OS === 'web') {
+      // Use confirm for web
+      const confirmed = window.confirm(`¿Estás seguro de que deseas eliminar "${video.title}"?`);
+      if (confirmed) {
+        performDelete(video);
+      }
+    } else {
+      Alert.alert(
+        'Eliminar Video',
+        `¿Estás seguro de que deseas eliminar "${video.title}"?`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Eliminar',
+            style: 'destructive',
+            onPress: () => performDelete(video),
           },
-        },
-      ]
-    );
+        ]
+      );
+    }
+  };
+
+  const performDelete = async (video: Video) => {
+    try {
+      await apiService.deleteVideo(video.id);
+      setVideos(videos.filter(v => v.id !== video.id));
+      if (Platform.OS === 'web') {
+        window.alert('Video eliminado exitosamente');
+      } else {
+        Alert.alert('Éxito', 'Video eliminado');
+      }
+    } catch (error) {
+      console.error('Delete error:', error);
+      if (Platform.OS === 'web') {
+        window.alert('Error al eliminar el video');
+      } else {
+        Alert.alert('Error', 'No se pudo eliminar el video');
+      }
+    }
   };
 
   const handleRetranscribe = async (video: Video) => {
