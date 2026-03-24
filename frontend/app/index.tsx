@@ -144,22 +144,34 @@ export default function HomeScreen() {
                   <Ionicons name="lock-closed-outline" size={22} color="#666" style={styles.inputIcon} />
                   <TextInput
                     ref={adminPasswordRef}
-                    style={styles.input}
+                    style={[styles.input, Platform.OS === 'ios' && styles.inputIOS]}
                     placeholder="Contraseña Admin"
                     placeholderTextColor="#666"
                     value={adminPassword}
-                    onChangeText={(text) => setAdminPassword(text)}
-                    secureTextEntry={true}
+                    onChangeText={(text) => {
+                      console.log('Admin password changed:', text.length);
+                      setAdminPassword(text);
+                    }}
+                    secureTextEntry={Platform.OS === 'android'}
                     autoCapitalize="none"
                     autoCorrect={false}
                     autoComplete="off"
-                    textContentType="none"
+                    textContentType="oneTimeCode"
                     returnKeyType="done"
                     onSubmitEditing={handleAdminLogin}
                     editable={true}
-                    selectTextOnFocus={true}
+                    keyboardType="default"
+                    contextMenuHidden={false}
+                    caretHidden={false}
+                    pointerEvents="auto"
                   />
                 </View>
+                
+                {Platform.OS === 'ios' && (
+                  <Text style={styles.iosHint}>
+                    Nota: En iOS la contraseña se muestra visible por compatibilidad
+                  </Text>
+                )}
 
                 <TouchableOpacity
                   style={[styles.button, styles.adminButton]}
@@ -259,6 +271,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     paddingVertical: 16,
     height: 56,
+  },
+  inputIOS: {
+    paddingTop: 18,
+    paddingBottom: 18,
+  },
+  iosHint: {
+    color: '#888',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: -8,
+    marginBottom: 16,
   },
   button: {
     flexDirection: 'row',
