@@ -68,11 +68,15 @@ export default function PracticeScreen() {
   const [pilotInput, setPilotInput] = useState('');
   const [isTransmitting, setIsTransmitting] = useState(false);
   const [isReceiving, setIsReceiving] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isEvaluating, setIsEvaluating] = useState(false);
+  const [evaluation, setEvaluation] = useState<any>(null);
+  const [showEvaluation, setShowEvaluation] = useState(false);
   const [sessionId] = useState(() => `session_${Date.now()}`);
   
   const { accessCode } = useAppStore();
   const soundRef = useRef<Audio.Sound | null>(null);
-  const radioStaticRef = useRef<Audio.Sound | null>(null);
+  const recordingRef = useRef<Audio.Recording | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -81,7 +85,7 @@ export default function PracticeScreen() {
     setupAudio();
     return () => {
       if (soundRef.current) soundRef.current.unloadAsync();
-      if (radioStaticRef.current) radioStaticRef.current.unloadAsync();
+      if (recordingRef.current) recordingRef.current.stopAndUnloadAsync();
     };
   }, []);
 
@@ -91,9 +95,87 @@ export default function PracticeScreen() {
         playsInSilentModeIOS: true,
         staysActiveInBackground: false,
         shouldDuckAndroid: true,
+        allowsRecordingIOS: true,
       });
     } catch (e) {
       console.error('Audio setup error:', e);
+    }
+  };
+
+  // Request microphone permissions
+  const requestMicPermission = async () => {
+    try {
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permiso requerido', 'Necesitamos acceso al micrófono para grabar tu voz');
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error('Permission error:', e);
+      return false;
+    }
+  };
+
+  // Start recording voice
+  const startRecording = async () => {
+    const hasPermission = await requestMicPermission();
+    if (!hasPermission) return;
+
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const recording = new Audio.Recording();
+      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await recording.startAsync();
+      recordingRef.current = recording;
+      setIsRecording(true);
+    } catch (e) {
+      console.error('Recording error:', e);
+      Alert.alert('Error', 'No se pudo iniciar la grabación');
+    }
+  };
+
+  // Stop recording and get transcript
+  const stopRecording = async () => {
+    if (!recordingRef.current) return '';
+    
+    setIsRecording(false);
+    try {
+      await recordingRef.current.stopAndUnloadAsync();
+      const uri = recordingRef.current.getURI();
+      recordingRef.current = null;
+      
+      // For now, we return empty and user types - 
+      // In a full implementation, you'd send the audio to a speech-to-text API
+      // But since we have text input, user can type what they said
+      return uri || '';
+    } catch (e) {
+      console.error('Stop recording error:', e);
+      return '';
+    }
+  };
+
+  // Evaluate the pilot's transmission
+  const evaluateTransmission = async (message: string) => {
+    if (!selectedScenario || !message.trim()) return;
+    
+    setIsEvaluating(true);
+    try {
+      const result = await apiService.evaluatePilotTransmission(
+        message,
+        selectedScenario.id
+      );
+      setEvaluation(result);
+      setShowEvaluation(true);
+    } catch (error) {
+      console.error('Evaluation error:', error);
+      Alert.alert('Error', 'No se pudo evaluar la transmisión');
+    } finally {
+      setIsEvaluating(false);
     }
   };
 
@@ -332,17 +414,51 @@ export default function PracticeScreen() {
 
         {/* Transmission Input */}
         <View style={styles.transmissionArea}>
+          {/* Record Button */}
+          <TouchableOpacity
+            style={[
+              styles.recordButton,
+              isRecording && styles.recordButtonActive
+            ]}
+            onPress={isRecording ? stopRecording : startRecording}
+            disabled={isTransmitting || isReceiving}
+          >
+            <Ionicons 
+              name={isRecording ? "stop" : "mic-outline"} 
+              size={22} 
+              color={isRecording ? '#fff' : '#F44336'} 
+            />
+          </TouchableOpacity>
+
           <View style={styles.inputContainer}>
             <TextInput
               style={styles.pilotInputField}
               value={pilotInput}
               onChangeText={setPilotInput}
-              placeholder="Type your radio transmission..."
+              placeholder="Escribe tu transmisión de radio..."
               placeholderTextColor="#666"
               multiline
-              editable={!isTransmitting && !isReceiving}
+              editable={!isTransmitting && !isReceiving && !isRecording}
             />
           </View>
+
+          {/* Evaluate Button */}
+          <TouchableOpacity
+            style={[
+              styles.evaluateButton,
+              (!pilotInput.trim() || isEvaluating) && styles.evaluateButtonDisabled
+            ]}
+            onPress={() => evaluateTransmission(pilotInput)}
+            disabled={!pilotInput.trim() || isEvaluating}
+          >
+            {isEvaluating ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="school" size={20} color={!pilotInput.trim() ? '#666' : '#fff'} />
+            )}
+          </TouchableOpacity>
+
+          {/* Transmit Button */}
           <TouchableOpacity
             style={[
               styles.transmitButton,
@@ -352,8 +468,8 @@ export default function PracticeScreen() {
             disabled={isTransmitting || isReceiving || !pilotInput.trim()}
           >
             <Ionicons 
-              name="mic" 
-              size={28} 
+              name="send" 
+              size={22} 
               color={isTransmitting || isReceiving || !pilotInput.trim() ? '#666' : '#fff'} 
             />
             <Text style={[
@@ -364,6 +480,83 @@ export default function PracticeScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* Evaluation Modal */}
+        {showEvaluation && evaluation && (
+          <View style={styles.evaluationOverlay}>
+            <View style={styles.evaluationCard}>
+              <View style={styles.evaluationHeader}>
+                <Text style={styles.evaluationTitle}>Evaluación de Transmisión</Text>
+                <TouchableOpacity onPress={() => setShowEvaluation(false)}>
+                  <Ionicons name="close" size={24} color="#fff" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Score */}
+              <View style={styles.scoreContainer}>
+                <View style={[
+                  styles.scoreCircle, 
+                  { borderColor: evaluation.total_score >= 80 ? '#4CAF50' : evaluation.total_score >= 60 ? '#FF9800' : '#F44336' }
+                ]}>
+                  <Text style={styles.scoreValue}>{evaluation.total_score || 0}</Text>
+                  <Text style={styles.scoreLabel}>/ 100</Text>
+                </View>
+              </View>
+
+              {/* Score Breakdown */}
+              <View style={styles.scoreBreakdown}>
+                <View style={styles.scoreItem}>
+                  <Text style={styles.scoreItemLabel}>Fraseología</Text>
+                  <Text style={styles.scoreItemValue}>{evaluation.phraseology_score || 0}/25</Text>
+                </View>
+                <View style={styles.scoreItem}>
+                  <Text style={styles.scoreItemLabel}>Estructura</Text>
+                  <Text style={styles.scoreItemValue}>{evaluation.structure_score || 0}/25</Text>
+                </View>
+                <View style={styles.scoreItem}>
+                  <Text style={styles.scoreItemLabel}>Claridad</Text>
+                  <Text style={styles.scoreItemValue}>{evaluation.clarity_score || 0}/25</Text>
+                </View>
+                <View style={styles.scoreItem}>
+                  <Text style={styles.scoreItemLabel}>Profesionalismo</Text>
+                  <Text style={styles.scoreItemValue}>{evaluation.professionalism_score || 0}/25</Text>
+                </View>
+              </View>
+
+              {/* Feedback */}
+              <ScrollView style={styles.feedbackScroll}>
+                <Text style={styles.feedbackTitle}>Retroalimentación:</Text>
+                <Text style={styles.feedbackText}>{evaluation.feedback}</Text>
+
+                {evaluation.correct_version && (
+                  <>
+                    <Text style={styles.feedbackTitle}>Versión correcta:</Text>
+                    <Text style={styles.correctVersionText}>{evaluation.correct_version}</Text>
+                  </>
+                )}
+
+                {evaluation.suggestions && evaluation.suggestions.length > 0 && (
+                  <>
+                    <Text style={styles.feedbackTitle}>Sugerencias:</Text>
+                    {evaluation.suggestions.map((suggestion: string, idx: number) => (
+                      <View key={idx} style={styles.suggestionItem}>
+                        <Ionicons name="bulb" size={14} color="#FF9800" />
+                        <Text style={styles.suggestionText}>{suggestion}</Text>
+                      </View>
+                    ))}
+                  </>
+                )}
+              </ScrollView>
+
+              <TouchableOpacity 
+                style={styles.closeEvaluationBtn}
+                onPress={() => setShowEvaluation(false)}
+              >
+                <Text style={styles.closeEvaluationText}>Continuar Practicando</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         {/* Quick Phrases */}
         <ScrollView 
@@ -811,23 +1004,6 @@ const styles = StyleSheet.create({
     padding: 12,
     maxHeight: 80,
   },
-  transmitButton: {
-    width: 64,
-    height: 64,
-    backgroundColor: '#F44336',
-    borderRadius: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  transmitButtonDisabled: {
-    backgroundColor: '#333',
-  },
-  transmitButtonText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 'bold',
-    marginTop: 2,
-  },
   quickPhrases: {
     backgroundColor: '#1A1A1A',
     paddingVertical: 8,
@@ -846,5 +1022,171 @@ const styles = StyleSheet.create({
     color: '#ccc',
     fontSize: 13,
     fontWeight: '500',
+  },
+  // Recording and Evaluation styles
+  recordButton: {
+    width: 44,
+    height: 44,
+    backgroundColor: '#2A2A2A',
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#F44336',
+  },
+  recordButtonActive: {
+    backgroundColor: '#F44336',
+  },
+  evaluateButton: {
+    width: 44,
+    height: 44,
+    backgroundColor: '#9C27B0',
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  evaluateButtonDisabled: {
+    backgroundColor: '#333',
+  },
+  transmitButton: {
+    width: 52,
+    height: 52,
+    backgroundColor: '#4CAF50',
+    borderRadius: 26,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  transmitButtonDisabled: {
+    backgroundColor: '#333',
+  },
+  transmitButtonText: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: 'bold',
+    marginTop: 2,
+  },
+  // Evaluation Modal
+  evaluationOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  evaluationCard: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 20,
+    padding: 20,
+    width: '100%',
+    maxHeight: '90%',
+  },
+  evaluationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  evaluationTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  scoreContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  scoreCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#0D0D0D',
+  },
+  scoreValue: {
+    color: '#fff',
+    fontSize: 36,
+    fontWeight: 'bold',
+  },
+  scoreLabel: {
+    color: '#888',
+    fontSize: 14,
+  },
+  scoreBreakdown: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  scoreItem: {
+    width: '48%',
+    backgroundColor: '#2A2A2A',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  scoreItemLabel: {
+    color: '#888',
+    fontSize: 12,
+  },
+  scoreItemValue: {
+    color: '#4CAF50',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  feedbackScroll: {
+    maxHeight: 200,
+    marginBottom: 16,
+  },
+  feedbackTitle: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+    marginTop: 12,
+  },
+  feedbackText: {
+    color: '#ccc',
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  correctVersionText: {
+    color: '#4CAF50',
+    fontSize: 14,
+    lineHeight: 22,
+    fontStyle: 'italic',
+    backgroundColor: '#1A3D1F',
+    padding: 12,
+    borderRadius: 8,
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 8,
+  },
+  suggestionText: {
+    flex: 1,
+    color: '#ccc',
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  closeEvaluationBtn: {
+    backgroundColor: '#2196F3',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  closeEvaluationText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

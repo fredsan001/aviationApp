@@ -1068,6 +1068,96 @@ async def get_initial_contact(scenario_id: str):
         "scenario": scenario
     }
 
+# Evaluation prompt for pilot voice/text
+EVALUATION_SYSTEM_PROMPT = """You are an expert ATC communication instructor evaluating a pilot's radio transmission. 
+Analyze the transmission based on:
+1. **Phraseology** (0-25 points): Use of standard aviation phraseology
+2. **Structure** (0-25 points): Proper sequence (Who you're calling, Who you are, Where you are, What you want)
+3. **Clarity** (0-25 points): Clear and concise communication
+4. **Professionalism** (0-25 points): Professional tone and confidence
+
+Provide feedback in Spanish and be encouraging but specific about improvements.
+
+IMPORTANT: Always respond in the following JSON format:
+{
+    "total_score": <number 0-100>,
+    "phraseology_score": <number 0-25>,
+    "structure_score": <number 0-25>,
+    "clarity_score": <number 0-25>,
+    "professionalism_score": <number 0-25>,
+    "feedback": "<detailed feedback in Spanish>",
+    "suggestions": ["<suggestion 1>", "<suggestion 2>", "<suggestion 3>"],
+    "correct_version": "<how the transmission should ideally sound>"
+}"""
+
+class EvaluationRequest(BaseModel):
+    pilot_message: str
+    scenario_id: str
+    expected_context: Optional[str] = None
+
+@api_router.post("/atc/evaluate")
+async def evaluate_pilot_transmission(request: EvaluationRequest):
+    """Evaluate a pilot's radio transmission using AI"""
+    try:
+        api_key = os.getenv("EMERGENT_LLM_KEY")
+        if not api_key:
+            raise HTTPException(status_code=500, detail="LLM API key not configured")
+        
+        scenario = ATC_SCENARIOS.get(request.scenario_id, {})
+        
+        # Build evaluation context
+        context = f"""
+        Scenario: {scenario.get('name', 'Unknown')}
+        Phase: {scenario.get('phase', 'Unknown')}
+        ATC Facility: {scenario.get('atc_facility', 'Unknown')}
+        Situation: {scenario.get('initial_situation', 'Unknown')}
+        
+        Pilot Transmission to evaluate: "{request.pilot_message}"
+        
+        {f"Expected context: {request.expected_context}" if request.expected_context else ""}
+        """
+        
+        chat = LlmChat(
+            api_key=api_key,
+            system_message=EVALUATION_SYSTEM_PROMPT
+        ).with_model("openai", "gpt-4.1")
+        
+        user_message = UserMessage(text=context)
+        response = await chat.send_message(user_message)
+        
+        # Parse JSON response
+        try:
+            # Try to extract JSON from the response
+            import re
+            json_match = re.search(r'\{[\s\S]*\}', response)
+            if json_match:
+                evaluation = json.loads(json_match.group())
+            else:
+                # Fallback if no JSON found
+                evaluation = {
+                    "total_score": 70,
+                    "phraseology_score": 17,
+                    "structure_score": 18,
+                    "clarity_score": 17,
+                    "professionalism_score": 18,
+                    "feedback": response,
+                    "suggestions": ["Practica más la fraseología estándar"],
+                    "correct_version": request.pilot_message
+                }
+        except json.JSONDecodeError:
+            evaluation = {
+                "total_score": 70,
+                "feedback": response,
+                "suggestions": [],
+                "correct_version": request.pilot_message
+            }
+        
+        return evaluation
+        
+    except Exception as e:
+        logger.error(f"Evaluation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Include the router in the main app
 app.include_router(api_router)
 

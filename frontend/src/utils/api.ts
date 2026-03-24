@@ -157,6 +157,14 @@ export const apiService = {
     const response = await api.post(`/atc/reset-session?session_id=${sessionId}&scenario_id=${scenarioId}`);
     return response.data;
   },
+  evaluatePilotTransmission: async (pilotMessage: string, scenarioId: string, expectedContext?: string) => {
+    const response = await api.post('/atc/evaluate', {
+      pilot_message: pilotMessage,
+      scenario_id: scenarioId,
+      expected_context: expectedContext,
+    });
+    return response.data;
+  },
 };
 
 export default api;

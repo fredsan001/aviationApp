@@ -685,19 +685,21 @@ const styles = StyleSheet.create({
   categoryOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     padding: 16,
     backgroundColor: '#2A2A2A',
     borderRadius: 12,
     marginBottom: 8,
+    gap: 12,
   },
   categoryOptionActive: {
+    backgroundColor: '#1E3D1F',
     borderWidth: 1,
     borderColor: '#4CAF50',
   },
   categoryOptionText: {
     color: '#fff',
     fontSize: 16,
+    flex: 1,
   },
   categoryOptionTextActive: {
     color: '#4CAF50',

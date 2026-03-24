@@ -23,7 +23,7 @@ export default function EditVideo() {
   const [video, setVideo] = useState<Video | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('');
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [subtitles, setSubtitles] = useState<Subtitle[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,6 +33,7 @@ export default function EditVideo() {
   const [editingSubtitle, setEditingSubtitle] = useState<Subtitle | null>(null);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
+  const [creatingCategory, setCreatingCategory] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -47,7 +48,11 @@ export default function EditVideo() {
       setVideo(videoData);
       setTitle(videoData.title);
       setDescription(videoData.description || '');
-      setCategory(videoData.category);
+      // Load multiple categories or fallback to single category
+      const cats = videoData.categories?.length > 0 
+        ? videoData.categories 
+        : (videoData.category ? [videoData.category] : []);
+      setSelectedCategories(cats);
       setSubtitles(videoData.subtitles || []);
       setCategories(categoriesData);
     } catch (error) {
@@ -64,13 +69,18 @@ export default function EditVideo() {
       Alert.alert('Error', 'El título es requerido');
       return;
     }
+    if (selectedCategories.length === 0) {
+      Alert.alert('Error', 'Selecciona al menos una categoría');
+      return;
+    }
 
     setSaving(true);
     try {
       await apiService.updateVideo(id, {
         title: title.trim(),
         description: description.trim(),
-        category: category,
+        category: selectedCategories[0], // Main category for backwards compatibility
+        categories: selectedCategories,
         subtitles: subtitles,
       });
       Alert.alert('Éxito', 'Video actualizado correctamente', [
@@ -84,11 +94,12 @@ export default function EditVideo() {
     }
   };
 
-  const handleSelectCategory = (cat: string) => {
-    setCategory(cat);
-    setShowCategoryModal(false);
-    setShowNewCategoryInput(false);
-    setNewCategoryName('');
+  const handleToggleCategory = (cat: string) => {
+    if (selectedCategories.includes(cat)) {
+      setSelectedCategories(selectedCategories.filter(c => c !== cat));
+    } else {
+      setSelectedCategories([...selectedCategories, cat]);
+    }
   };
 
   const handleCreateCategory = async () => {
@@ -97,20 +108,22 @@ export default function EditVideo() {
       return;
     }
 
+    setCreatingCategory(true);
     try {
       await apiService.createCategory({
         name: newCategoryName.trim(),
         description: '',
       });
-      setCategory(newCategoryName.trim());
-      setShowCategoryModal(false);
+      setSelectedCategories([...selectedCategories, newCategoryName.trim()]);
       setShowNewCategoryInput(false);
       setNewCategoryName('');
-      // Refresh categories
       const newCategories = await apiService.getCategories();
       setCategories(newCategories);
+      Alert.alert('Éxito', 'Categoría creada correctamente');
     } catch (error) {
       Alert.alert('Error', 'No se pudo crear la categoría');
+    } finally {
+      setCreatingCategory(false);
     }
   };
 
@@ -188,18 +201,32 @@ export default function EditVideo() {
           />
         </View>
 
-        {/* Category Selector */}
+        {/* Category Selector - Multiple */}
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Categoría</Text>
+          <Text style={styles.label}>Categorías</Text>
           <TouchableOpacity
             style={styles.categorySelector}
             onPress={() => setShowCategoryModal(true)}
           >
-            <Text style={styles.categorySelectorText}>
-              {category || 'Seleccionar categoría'}
+            <Text style={[styles.categorySelectorText, selectedCategories.length === 0 && { color: '#666' }]}>
+              {selectedCategories.length > 0 
+                ? `${selectedCategories.length} seleccionadas`
+                : 'Seleccionar categorías'}
             </Text>
             <Ionicons name="chevron-down" size={20} color="#888" />
           </TouchableOpacity>
+          {selectedCategories.length > 0 && (
+            <View style={styles.selectedCategoriesWrap}>
+              {selectedCategories.map((cat) => (
+                <View key={cat} style={styles.categoryTag}>
+                  <Text style={styles.categoryTagText}>{cat}</Text>
+                  <TouchableOpacity onPress={() => handleToggleCategory(cat)}>
+                    <Ionicons name="close-circle" size={18} color="#888" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
 
         {/* Processing Status */}
@@ -293,7 +320,7 @@ export default function EditVideo() {
         </TouchableOpacity>
       </ScrollView>
 
-      {/* Category Selection Modal */}
+      {/* Category Selection Modal - Multiple */}
       <Modal
         visible={showCategoryModal}
         transparent
@@ -303,34 +330,41 @@ export default function EditVideo() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Seleccionar Categoría</Text>
+              <Text style={styles.modalTitle}>Seleccionar Categorías</Text>
               <TouchableOpacity onPress={() => setShowCategoryModal(false)}>
-                <Ionicons name="close" size={24} color="#fff" />
+                <Ionicons name="checkmark" size={24} color="#4CAF50" />
               </TouchableOpacity>
             </View>
+
+            <Text style={styles.modalSubtitle}>Puedes seleccionar múltiples categorías</Text>
 
             <FlatList
               data={categories}
               keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.categoryOption,
-                    category === item.name && styles.categoryOptionActive
-                  ]}
-                  onPress={() => handleSelectCategory(item.name)}
-                >
-                  <Text style={[
-                    styles.categoryOptionText,
-                    category === item.name && styles.categoryOptionTextActive
-                  ]}>
-                    {item.name}
-                  </Text>
-                  {category === item.name && (
-                    <Ionicons name="checkmark" size={20} color="#4CAF50" />
-                  )}
-                </TouchableOpacity>
-              )}
+              renderItem={({ item }) => {
+                const isSelected = selectedCategories.includes(item.name);
+                return (
+                  <TouchableOpacity
+                    style={[
+                      styles.categoryOption,
+                      isSelected && styles.categoryOptionActive
+                    ]}
+                    onPress={() => handleToggleCategory(item.name)}
+                  >
+                    <Ionicons 
+                      name={isSelected ? "checkbox" : "square-outline"} 
+                      size={22} 
+                      color={isSelected ? "#4CAF50" : "#666"} 
+                    />
+                    <Text style={[
+                      styles.categoryOptionText,
+                      isSelected && styles.categoryOptionTextActive
+                    ]}>
+                      {item.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              }}
               ListEmptyComponent={
                 <Text style={styles.emptyText}>No hay categorías disponibles</Text>
               }
@@ -358,10 +392,15 @@ export default function EditVideo() {
                     <Text style={styles.newCategoryCancelText}>Cancelar</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={styles.newCategoryCreateBtn}
+                    style={[styles.newCategoryCreateBtn, creatingCategory && { opacity: 0.7 }]}
                     onPress={handleCreateCategory}
+                    disabled={creatingCategory}
                   >
-                    <Text style={styles.newCategoryCreateText}>Crear</Text>
+                    {creatingCategory ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.newCategoryCreateText}>Crear</Text>
+                    )}
                   </TouchableOpacity>
                 </View>
               </View>
@@ -654,26 +693,53 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '600',
   },
+  modalSubtitle: {
+    color: '#888',
+    fontSize: 14,
+    marginBottom: 16,
+  },
   categoryOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     padding: 16,
     backgroundColor: '#2A2A2A',
     borderRadius: 12,
     marginBottom: 8,
+    gap: 12,
   },
   categoryOptionActive: {
+    backgroundColor: '#1E3D1F',
     borderWidth: 1,
     borderColor: '#4CAF50',
   },
   categoryOptionText: {
     color: '#fff',
     fontSize: 16,
+    flex: 1,
   },
   categoryOptionTextActive: {
     color: '#4CAF50',
     fontWeight: '600',
+  },
+  selectedCategoriesWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  categoryTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2A2A2A',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 6,
+  },
+  categoryTagText: {
+    color: '#4CAF50',
+    fontSize: 13,
+    fontWeight: '500',
   },
   emptyText: {
     color: '#666',
