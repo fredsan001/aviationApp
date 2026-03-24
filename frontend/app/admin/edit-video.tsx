@@ -3,42 +3,56 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
-  TextInput,
   TouchableOpacity,
+  TextInput,
   Alert,
   ActivityIndicator,
-  KeyboardAvoidingView,
+  ScrollView,
   Platform,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { apiService } from '../../src/utils/api';
-import { Video, Subtitle } from '../../src/types';
+import { Video, Subtitle, Category } from '../../src/types';
 
 export default function EditVideo() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [video, setVideo] = useState<Video | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
+  const [subtitles, setSubtitles] = useState<Subtitle[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showSubtitleModal, setShowSubtitleModal] = useState(false);
+  const [editingSubtitle, setEditingSubtitle] = useState<Subtitle | null>(null);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
 
   useEffect(() => {
-    fetchVideo();
+    fetchData();
   }, [id]);
 
-  const fetchVideo = async () => {
+  const fetchData = async () => {
     try {
-      const data = await apiService.getVideo(id!);
-      setVideo(data);
-      setTitle(data.title);
-      setDescription(data.description || '');
-      setCategory(data.category);
+      const [videoData, categoriesData] = await Promise.all([
+        apiService.getVideo(id),
+        apiService.getCategories(),
+      ]);
+      setVideo(videoData);
+      setTitle(videoData.title);
+      setDescription(videoData.description || '');
+      setCategory(videoData.category);
+      setSubtitles(videoData.subtitles || []);
+      setCategories(categoriesData);
     } catch (error) {
-      Alert.alert('Error', 'Failed to load video');
+      console.error('Error fetching video:', error);
+      Alert.alert('Error', 'No se pudo cargar el video');
       router.back();
     } finally {
       setLoading(false);
@@ -47,31 +61,94 @@ export default function EditVideo() {
 
   const handleSave = async () => {
     if (!title.trim()) {
-      Alert.alert('Error', 'Title is required');
+      Alert.alert('Error', 'El título es requerido');
       return;
     }
 
     setSaving(true);
     try {
-      await apiService.updateVideo(id!, {
+      await apiService.updateVideo(id, {
         title: title.trim(),
         description: description.trim(),
-        category: category.trim(),
+        category: category,
+        subtitles: subtitles,
       });
-      Alert.alert('Success', 'Video updated', [
+      Alert.alert('Éxito', 'Video actualizado correctamente', [
         { text: 'OK', onPress: () => router.back() }
       ]);
     } catch (error) {
-      Alert.alert('Error', 'Failed to update video');
+      console.error('Error saving video:', error);
+      Alert.alert('Error', 'No se pudo guardar el video');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSelectCategory = (cat: string) => {
+    setCategory(cat);
+    setShowCategoryModal(false);
+    setShowNewCategoryInput(false);
+    setNewCategoryName('');
+  };
+
+  const handleCreateCategory = async () => {
+    if (!newCategoryName.trim()) {
+      Alert.alert('Error', 'Ingresa un nombre para la categoría');
+      return;
+    }
+
+    try {
+      await apiService.createCategory({
+        name: newCategoryName.trim(),
+        description: '',
+      });
+      setCategory(newCategoryName.trim());
+      setShowCategoryModal(false);
+      setShowNewCategoryInput(false);
+      setNewCategoryName('');
+      // Refresh categories
+      const newCategories = await apiService.getCategories();
+      setCategories(newCategories);
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo crear la categoría');
     }
   };
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    const ms = Math.floor((seconds % 1) * 100);
+    return `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
+  };
+
+  const handleEditSubtitle = (subtitle: Subtitle) => {
+    setEditingSubtitle({ ...subtitle });
+    setShowSubtitleModal(true);
+  };
+
+  const handleSaveSubtitle = () => {
+    if (!editingSubtitle) return;
+
+    setSubtitles(subtitles.map(s => 
+      s.id === editingSubtitle.id ? editingSubtitle : s
+    ));
+    setShowSubtitleModal(false);
+    setEditingSubtitle(null);
+  };
+
+  const handleDeleteSubtitle = (subtitleId: string) => {
+    Alert.alert(
+      'Eliminar Subtítulo',
+      '¿Estás seguro de eliminar este subtítulo?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: () => setSubtitles(subtitles.filter(s => s.id !== subtitleId))
+        }
+      ]
+    );
   };
 
   if (loading) {
@@ -82,84 +159,298 @@ export default function EditVideo() {
     );
   }
 
-  if (!video) return null;
-
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
-      >
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Title</Text>
-            <TextInput
-              style={styles.input}
-              value={title}
-              onChangeText={setTitle}
-              placeholder="Enter title"
-              placeholderTextColor="#666"
-            />
-          </View>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {/* Title */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Título *</Text>
+          <TextInput
+            style={styles.input}
+            value={title}
+            onChangeText={setTitle}
+            placeholder="Título del video"
+            placeholderTextColor="#666"
+          />
+        </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Description</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={description}
-              onChangeText={setDescription}
-              placeholder="Enter description"
-              placeholderTextColor="#666"
-              multiline
-              numberOfLines={4}
-            />
-          </View>
+        {/* Description */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Descripción</Text>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            value={description}
+            onChangeText={setDescription}
+            placeholder="Descripción del video"
+            placeholderTextColor="#666"
+            multiline
+            numberOfLines={4}
+          />
+        </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Category</Text>
-            <TextInput
-              style={styles.input}
-              value={category}
-              onChangeText={setCategory}
-              placeholder="Enter category"
-              placeholderTextColor="#666"
-            />
-          </View>
+        {/* Category Selector */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Categoría</Text>
+          <TouchableOpacity
+            style={styles.categorySelector}
+            onPress={() => setShowCategoryModal(true)}
+          >
+            <Text style={styles.categorySelectorText}>
+              {category || 'Seleccionar categoría'}
+            </Text>
+            <Ionicons name="chevron-down" size={20} color="#888" />
+          </TouchableOpacity>
+        </View>
 
-          <View style={styles.subtitlesSection}>
-            <Text style={styles.sectionTitle}>Subtitles ({video.subtitles.length})</Text>
-            {video.subtitles.length === 0 ? (
-              <Text style={styles.noSubtitles}>No subtitles yet</Text>
-            ) : (
-              video.subtitles.map((subtitle, index) => (
-                <View key={subtitle.id} style={styles.subtitleItem}>
-                  <View style={styles.subtitleTime}>
-                    <Text style={styles.timeText}>
-                      {formatTime(subtitle.start_time)} - {formatTime(subtitle.end_time)}
-                    </Text>
-                  </View>
-                  <Text style={styles.subtitleText}>{subtitle.text}</Text>
-                </View>
-              ))
+        {/* Processing Status */}
+        {video?.is_processing && (
+          <View style={styles.processingBanner}>
+            <ActivityIndicator size="small" color="#FF9800" />
+            <Text style={styles.processingText}>
+              Generando subtítulos... {video.processing_status}
+            </Text>
+          </View>
+        )}
+
+        {/* Subtitles Section */}
+        <View style={styles.subtitlesSection}>
+          <View style={styles.subtitlesHeader}>
+            <Text style={styles.sectionTitle}>
+              Subtítulos ({subtitles.length})
+            </Text>
+            {video?.is_processing && (
+              <View style={styles.processingBadge}>
+                <Ionicons name="time" size={14} color="#FF9800" />
+                <Text style={styles.processingBadgeText}>Procesando</Text>
+              </View>
             )}
           </View>
 
-          <TouchableOpacity
-            style={[styles.saveButton, saving && styles.saveButtonDisabled]}
-            onPress={handleSave}
-            disabled={saving}
-          >
-            {saving ? (
-              <ActivityIndicator color="#fff" />
+          {subtitles.length > 0 ? (
+            subtitles.map((subtitle, index) => (
+              <View key={subtitle.id} style={styles.subtitleCard}>
+                <View style={styles.subtitleHeader}>
+                  <Text style={styles.subtitleIndex}>#{index + 1}</Text>
+                  <Text style={styles.subtitleTime}>
+                    {formatTime(subtitle.start_time)} - {formatTime(subtitle.end_time)}
+                  </Text>
+                </View>
+                <Text style={styles.subtitleText}>{subtitle.text}</Text>
+                <View style={styles.subtitleActions}>
+                  <TouchableOpacity
+                    style={styles.subtitleAction}
+                    onPress={() => handleEditSubtitle(subtitle)}
+                  >
+                    <Ionicons name="pencil" size={16} color="#2196F3" />
+                    <Text style={styles.subtitleActionText}>Editar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.subtitleAction}
+                    onPress={() => handleDeleteSubtitle(subtitle.id)}
+                  >
+                    <Ionicons name="trash" size={16} color="#F44336" />
+                    <Text style={[styles.subtitleActionText, { color: '#F44336' }]}>
+                      Eliminar
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
+          ) : (
+            <View style={styles.noSubtitles}>
+              <Ionicons name="text-outline" size={48} color="#444" />
+              <Text style={styles.noSubtitlesText}>No hay subtítulos</Text>
+              {!video?.is_processing && (
+                <Text style={styles.noSubtitlesHint}>
+                  Puedes re-transcribir el video para generar subtítulos automáticamente
+                </Text>
+              )}
+            </View>
+          )}
+        </View>
+
+        {/* Save Button */}
+        <TouchableOpacity
+          style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+          onPress={handleSave}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Ionicons name="checkmark" size={24} color="#fff" />
+              <Text style={styles.saveButtonText}>Guardar Cambios</Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.cancelButton}
+          onPress={() => router.back()}
+        >
+          <Text style={styles.cancelButtonText}>Cancelar</Text>
+        </TouchableOpacity>
+      </ScrollView>
+
+      {/* Category Selection Modal */}
+      <Modal
+        visible={showCategoryModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCategoryModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Seleccionar Categoría</Text>
+              <TouchableOpacity onPress={() => setShowCategoryModal(false)}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            <FlatList
+              data={categories}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.categoryOption,
+                    category === item.name && styles.categoryOptionActive
+                  ]}
+                  onPress={() => handleSelectCategory(item.name)}
+                >
+                  <Text style={[
+                    styles.categoryOptionText,
+                    category === item.name && styles.categoryOptionTextActive
+                  ]}>
+                    {item.name}
+                  </Text>
+                  {category === item.name && (
+                    <Ionicons name="checkmark" size={20} color="#4CAF50" />
+                  )}
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>No hay categorías disponibles</Text>
+              }
+            />
+
+            {/* Create New Category */}
+            {showNewCategoryInput ? (
+              <View style={styles.newCategoryInput}>
+                <TextInput
+                  style={styles.newCategoryTextInput}
+                  value={newCategoryName}
+                  onChangeText={setNewCategoryName}
+                  placeholder="Nombre de la nueva categoría"
+                  placeholderTextColor="#666"
+                  autoFocus
+                />
+                <View style={styles.newCategoryButtons}>
+                  <TouchableOpacity
+                    style={styles.newCategoryCancelBtn}
+                    onPress={() => {
+                      setShowNewCategoryInput(false);
+                      setNewCategoryName('');
+                    }}
+                  >
+                    <Text style={styles.newCategoryCancelText}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.newCategoryCreateBtn}
+                    onPress={handleCreateCategory}
+                  >
+                    <Text style={styles.newCategoryCreateText}>Crear</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             ) : (
+              <TouchableOpacity
+                style={styles.createCategoryBtn}
+                onPress={() => setShowNewCategoryInput(true)}
+              >
+                <Ionicons name="add-circle" size={24} color="#4CAF50" />
+                <Text style={styles.createCategoryText}>Crear Nueva Categoría</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Subtitle Edit Modal */}
+      <Modal
+        visible={showSubtitleModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowSubtitleModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Editar Subtítulo</Text>
+              <TouchableOpacity onPress={() => setShowSubtitleModal(false)}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            {editingSubtitle && (
               <>
-                <Ionicons name="save" size={24} color="#fff" />
-                <Text style={styles.saveButtonText}>Save Changes</Text>
+                <View style={styles.subtitleTimeInputs}>
+                  <View style={styles.timeInputGroup}>
+                    <Text style={styles.timeLabel}>Inicio (seg)</Text>
+                    <TextInput
+                      style={styles.timeInput}
+                      value={editingSubtitle.start_time.toString()}
+                      onChangeText={(text) => setEditingSubtitle({
+                        ...editingSubtitle,
+                        start_time: parseFloat(text) || 0
+                      })}
+                      keyboardType="numeric"
+                      placeholderTextColor="#666"
+                    />
+                  </View>
+                  <View style={styles.timeInputGroup}>
+                    <Text style={styles.timeLabel}>Fin (seg)</Text>
+                    <TextInput
+                      style={styles.timeInput}
+                      value={editingSubtitle.end_time.toString()}
+                      onChangeText={(text) => setEditingSubtitle({
+                        ...editingSubtitle,
+                        end_time: parseFloat(text) || 0
+                      })}
+                      keyboardType="numeric"
+                      placeholderTextColor="#666"
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Texto</Text>
+                  <TextInput
+                    style={[styles.input, styles.textArea]}
+                    value={editingSubtitle.text}
+                    onChangeText={(text) => setEditingSubtitle({
+                      ...editingSubtitle,
+                      text
+                    })}
+                    placeholder="Texto del subtítulo"
+                    placeholderTextColor="#666"
+                    multiline
+                  />
+                </View>
+
+                <TouchableOpacity
+                  style={styles.saveSubtitleBtn}
+                  onPress={handleSaveSubtitle}
+                >
+                  <Text style={styles.saveSubtitleText}>Guardar Subtítulo</Text>
+                </TouchableOpacity>
               </>
             )}
-          </TouchableOpacity>
-        </ScrollView>
-      </KeyboardAvoidingView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -174,9 +465,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#121212',
-  },
-  keyboardView: {
-    flex: 1,
   },
   scrollView: {
     flex: 1,
@@ -204,38 +492,117 @@ const styles = StyleSheet.create({
     height: 100,
     textAlignVertical: 'top',
   },
+  categorySelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#1E1E1E',
+    borderRadius: 12,
+    padding: 16,
+  },
+  categorySelectorText: {
+    color: '#fff',
+    fontSize: 16,
+  },
+  processingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FF980020',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    gap: 12,
+  },
+  processingText: {
+    color: '#FF9800',
+    fontSize: 14,
+    flex: 1,
+  },
   subtitlesSection: {
-    marginTop: 16,
+    marginBottom: 24,
+  },
+  subtitlesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
   },
   sectionTitle: {
     color: '#fff',
     fontSize: 18,
     fontWeight: '600',
-    marginBottom: 16,
   },
-  noSubtitles: {
-    color: '#666',
-    fontSize: 14,
-    textAlign: 'center',
-    paddingVertical: 24,
+  processingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FF980020',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
   },
-  subtitleItem: {
-    backgroundColor: '#1E1E1E',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
-  },
-  subtitleTime: {
-    marginBottom: 4,
-  },
-  timeText: {
-    color: '#2196F3',
+  processingBadgeText: {
+    color: '#FF9800',
     fontSize: 12,
     fontWeight: '600',
+  },
+  subtitleCard: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+  },
+  subtitleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 12,
+  },
+  subtitleIndex: {
+    color: '#2196F3',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  subtitleTime: {
+    color: '#888',
+    fontSize: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
   subtitleText: {
     color: '#fff',
     fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  subtitleActions: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  subtitleAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  subtitleActionText: {
+    color: '#2196F3',
+    fontSize: 13,
+  },
+  noSubtitles: {
+    alignItems: 'center',
+    padding: 32,
+    backgroundColor: '#1E1E1E',
+    borderRadius: 12,
+  },
+  noSubtitlesText: {
+    color: '#666',
+    fontSize: 16,
+    marginTop: 12,
+  },
+  noSubtitlesHint: {
+    color: '#444',
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 8,
   },
   saveButton: {
     backgroundColor: '#4CAF50',
@@ -244,8 +611,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 24,
     gap: 12,
+    marginBottom: 12,
   },
   saveButtonDisabled: {
     backgroundColor: '#333',
@@ -253,6 +620,151 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: '#fff',
     fontSize: 18,
+    fontWeight: '600',
+  },
+  cancelButton: {
+    alignItems: 'center',
+    padding: 16,
+  },
+  cancelButtonText: {
+    color: '#888',
+    fontSize: 16,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#1E1E1E',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  categoryOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    backgroundColor: '#2A2A2A',
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  categoryOptionActive: {
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  categoryOptionText: {
+    color: '#fff',
+    fontSize: 16,
+  },
+  categoryOptionTextActive: {
+    color: '#4CAF50',
+    fontWeight: '600',
+  },
+  emptyText: {
+    color: '#666',
+    fontSize: 14,
+    textAlign: 'center',
+    padding: 20,
+  },
+  createCategoryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    backgroundColor: '#2A2A2A',
+    borderRadius: 12,
+    marginTop: 12,
+    gap: 8,
+  },
+  createCategoryText: {
+    color: '#4CAF50',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  newCategoryInput: {
+    marginTop: 12,
+  },
+  newCategoryTextInput: {
+    backgroundColor: '#2A2A2A',
+    borderRadius: 12,
+    padding: 16,
+    color: '#fff',
+    fontSize: 16,
+    marginBottom: 12,
+  },
+  newCategoryButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  newCategoryCancelBtn: {
+    flex: 1,
+    padding: 14,
+    backgroundColor: '#333',
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  newCategoryCancelText: {
+    color: '#888',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  newCategoryCreateBtn: {
+    flex: 1,
+    padding: 14,
+    backgroundColor: '#4CAF50',
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  newCategoryCreateText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  subtitleTimeInputs: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  timeInputGroup: {
+    flex: 1,
+  },
+  timeLabel: {
+    color: '#888',
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  timeInput: {
+    backgroundColor: '#2A2A2A',
+    borderRadius: 10,
+    padding: 14,
+    color: '#fff',
+    fontSize: 16,
+  },
+  saveSubtitleBtn: {
+    backgroundColor: '#2196F3',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  saveSubtitleText: {
+    color: '#fff',
+    fontSize: 16,
     fontWeight: '600',
   },
 });

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,22 +11,73 @@ import {
   Switch,
   KeyboardAvoidingView,
   Platform,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
 import { apiService } from '../../src/utils/api';
+import { Category } from '../../src/types';
 
 export default function UploadVideo() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('General');
+  const [category, setCategory] = useState('');
+  const [categories, setCategories] = useState<Category[]>([]);
   const [autoTranscribe, setAutoTranscribe] = useState(true);
   const [selectedFile, setSelectedFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
+
+  useEffect(() => {
+    fetchCategories();
+  }, []);
+
+  const fetchCategories = async () => {
+    try {
+      const data = await apiService.getCategories();
+      setCategories(data);
+      if (data.length > 0 && !category) {
+        setCategory(data[0].name);
+      }
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+    }
+  };
+
+  const handleSelectCategory = (cat: string) => {
+    setCategory(cat);
+    setShowCategoryModal(false);
+    setShowNewCategoryInput(false);
+    setNewCategoryName('');
+  };
+
+  const handleCreateCategory = async () => {
+    if (!newCategoryName.trim()) {
+      Alert.alert('Error', 'Ingresa un nombre para la categoría');
+      return;
+    }
+
+    try {
+      await apiService.createCategory({
+        name: newCategoryName.trim(),
+        description: '',
+      });
+      setCategory(newCategoryName.trim());
+      setShowCategoryModal(false);
+      setShowNewCategoryInput(false);
+      setNewCategoryName('');
+      await fetchCategories();
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo crear la categoría');
+    }
+  };
 
   const pickVideo = async () => {
     try {
@@ -207,17 +258,19 @@ export default function UploadVideo() {
             />
           </View>
 
-          {/* Category Input */}
+          {/* Category Selector */}
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Categoría</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ej: Despegue, Aterrizaje, Emergencia"
-              placeholderTextColor="#666"
-              value={category}
-              onChangeText={setCategory}
-              editable={!uploading}
-            />
+            <TouchableOpacity
+              style={styles.categorySelector}
+              onPress={() => setShowCategoryModal(true)}
+              disabled={uploading}
+            >
+              <Text style={[styles.categorySelectorText, !category && { color: '#666' }]}>
+                {category || 'Seleccionar categoría'}
+              </Text>
+              <Ionicons name="chevron-down" size={20} color="#888" />
+            </TouchableOpacity>
           </View>
 
           {/* Auto Transcribe Toggle */}
@@ -275,6 +328,91 @@ export default function UploadVideo() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Category Selection Modal */}
+      <Modal
+        visible={showCategoryModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCategoryModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Seleccionar Categoría</Text>
+              <TouchableOpacity onPress={() => setShowCategoryModal(false)}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            <FlatList
+              data={categories}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.categoryOption,
+                    category === item.name && styles.categoryOptionActive
+                  ]}
+                  onPress={() => handleSelectCategory(item.name)}
+                >
+                  <Text style={[
+                    styles.categoryOptionText,
+                    category === item.name && styles.categoryOptionTextActive
+                  ]}>
+                    {item.name}
+                  </Text>
+                  {category === item.name && (
+                    <Ionicons name="checkmark" size={20} color="#4CAF50" />
+                  )}
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>No hay categorías. Crea una nueva.</Text>
+              }
+            />
+
+            {/* Create New Category */}
+            {showNewCategoryInput ? (
+              <View style={styles.newCategoryInput}>
+                <TextInput
+                  style={styles.newCategoryTextInput}
+                  value={newCategoryName}
+                  onChangeText={setNewCategoryName}
+                  placeholder="Nombre de la nueva categoría"
+                  placeholderTextColor="#666"
+                  autoFocus
+                />
+                <View style={styles.newCategoryButtons}>
+                  <TouchableOpacity
+                    style={styles.newCategoryCancelBtn}
+                    onPress={() => {
+                      setShowNewCategoryInput(false);
+                      setNewCategoryName('');
+                    }}
+                  >
+                    <Text style={styles.newCategoryCancelText}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.newCategoryCreateBtn}
+                    onPress={handleCreateCategory}
+                  >
+                    <Text style={styles.newCategoryCreateText}>Crear</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.createCategoryBtn}
+                onPress={() => setShowNewCategoryInput(true)}
+              >
+                <Ionicons name="add-circle" size={24} color="#4CAF50" />
+                <Text style={styles.createCategoryText}>Crear Nueva Categoría</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -470,5 +608,122 @@ const styles = StyleSheet.create({
   },
   outlineButtonText: {
     color: '#888',
+  },
+  // Category Modal Styles
+  categorySelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#1E1E1E',
+    borderRadius: 12,
+    padding: 16,
+  },
+  categorySelectorText: {
+    color: '#fff',
+    fontSize: 16,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#1E1E1E',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  categoryOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    backgroundColor: '#2A2A2A',
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  categoryOptionActive: {
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  categoryOptionText: {
+    color: '#fff',
+    fontSize: 16,
+  },
+  categoryOptionTextActive: {
+    color: '#4CAF50',
+    fontWeight: '600',
+  },
+  emptyText: {
+    color: '#666',
+    fontSize: 14,
+    textAlign: 'center',
+    padding: 20,
+  },
+  createCategoryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    backgroundColor: '#2A2A2A',
+    borderRadius: 12,
+    marginTop: 12,
+    gap: 8,
+  },
+  createCategoryText: {
+    color: '#4CAF50',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  newCategoryInput: {
+    marginTop: 12,
+  },
+  newCategoryTextInput: {
+    backgroundColor: '#2A2A2A',
+    borderRadius: 12,
+    padding: 16,
+    color: '#fff',
+    fontSize: 16,
+    marginBottom: 12,
+  },
+  newCategoryButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  newCategoryCancelBtn: {
+    flex: 1,
+    padding: 14,
+    backgroundColor: '#333',
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  newCategoryCancelText: {
+    color: '#888',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  newCategoryCreateBtn: {
+    flex: 1,
+    padding: 14,
+    backgroundColor: '#4CAF50',
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  newCategoryCreateText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

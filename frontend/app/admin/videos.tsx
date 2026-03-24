@@ -115,51 +115,69 @@ export default function ManageVideos() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const renderVideo = ({ item }: { item: Video }) => (
-    <View style={styles.videoCard}>
-      <View style={styles.videoThumbnail}>
-        <Ionicons name="videocam" size={32} color="#fff" />
-        {item.is_processing && (
-          <View style={styles.processingBadge}>
-            <ActivityIndicator size="small" color="#fff" />
-          </View>
-        )}
-      </View>
-      <View style={styles.videoInfo}>
-        <Text style={styles.videoTitle} numberOfLines={2}>{item.title}</Text>
-        <Text style={styles.videoCategory}>{item.category}</Text>
-        <View style={styles.videoMeta}>
-          <Text style={styles.videoDuration}>{formatDuration(item.duration)}</Text>
-          <Text style={styles.videoSubtitles}>
-            {item.subtitles.length} subtitles
-          </Text>
+  const renderVideo = ({ item }: { item: Video }) => {
+    // Calculate processing time if video is being processed
+    const getProcessingTime = () => {
+      if (!item.is_processing) return null;
+      const createdAt = new Date(item.created_at);
+      const now = new Date();
+      const diffMs = now.getTime() - createdAt.getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      if (diffMins < 1) return 'Iniciando...';
+      if (diffMins < 60) return `${diffMins} min transcurridos`;
+      const diffHours = Math.floor(diffMins / 60);
+      return `${diffHours}h ${diffMins % 60}min transcurridos`;
+    };
+
+    return (
+      <View style={styles.videoCard}>
+        <View style={styles.videoThumbnail}>
+          <Ionicons name="videocam" size={32} color="#fff" />
+          {item.is_processing && (
+            <View style={styles.processingBadge}>
+              <ActivityIndicator size="small" color="#fff" />
+            </View>
+          )}
         </View>
-        {item.is_processing && (
-          <Text style={styles.processingText}>{item.processing_status}</Text>
-        )}
+        <View style={styles.videoInfo}>
+          <Text style={styles.videoTitle} numberOfLines={2}>{item.title}</Text>
+          <Text style={styles.videoCategory}>{item.category}</Text>
+          <View style={styles.videoMeta}>
+            <Text style={styles.videoDuration}>{formatDuration(item.duration)}</Text>
+            <Text style={styles.videoSubtitles}>
+              {item.subtitles?.length || 0} subtítulos
+            </Text>
+          </View>
+          {item.is_processing && (
+            <View style={styles.processingInfo}>
+              <Text style={styles.processingText}>{item.processing_status}</Text>
+              <Text style={styles.processingTime}>{getProcessingTime()}</Text>
+            </View>
+          )}
+        </View>
+        <View style={styles.videoActions}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => router.push({ pathname: '/admin/edit-video', params: { id: item.id } })}
+          >
+            <Ionicons name="pencil" size={20} color="#2196F3" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => handleRetranscribe(item)}
+          >
+            <Ionicons name="refresh" size={20} color="#FF9800" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => handleDelete(item)}
+          >
+            <Ionicons name="trash" size={20} color="#F44336" />
+          </TouchableOpacity>
+        </View>
       </View>
-      <View style={styles.videoActions}>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => router.push({ pathname: '/admin/edit-video', params: { id: item.id } })}
-        >
-          <Ionicons name="pencil" size={20} color="#2196F3" />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => handleRetranscribe(item)}
-        >
-          <Ionicons name="refresh" size={20} color="#FF9800" />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => handleDelete(item)}
-        >
-          <Ionicons name="trash" size={20} color="#F44336" />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+    );
+  };
 
   if (loading) {
     return (
@@ -273,10 +291,17 @@ const styles = StyleSheet.create({
     color: '#4CAF50',
     fontSize: 12,
   },
+  processingInfo: {
+    marginTop: 4,
+  },
   processingText: {
     color: '#FF9800',
     fontSize: 12,
-    marginTop: 4,
+  },
+  processingTime: {
+    color: '#888',
+    fontSize: 11,
+    marginTop: 2,
   },
   videoActions: {
     justifyContent: 'center',

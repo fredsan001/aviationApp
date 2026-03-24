@@ -68,6 +68,7 @@ class VideoUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     category: Optional[str] = None
+    subtitles: Optional[List[dict]] = None
 
 class SubtitleCreate(BaseModel):
     start_time: float

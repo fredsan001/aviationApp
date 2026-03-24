@@ -55,7 +55,7 @@ export const apiService = {
     });
     return response.data;
   },
-  updateVideo: async (id: string, data: { title?: string; description?: string; category?: string }) => {
+  updateVideo: async (id: string, data: { title?: string; description?: string; category?: string; subtitles?: any[] }) => {
     const response = await api.put(`/videos/${id}`, data);
     return response.data;
   },
