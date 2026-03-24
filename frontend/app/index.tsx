@@ -140,38 +140,25 @@ export default function HomeScreen() {
               </>
             ) : (
               <>
-                <View style={styles.inputContainer}>
-                  <Ionicons name="lock-closed-outline" size={22} color="#666" style={styles.inputIcon} />
+                <View style={styles.adminInputWrapper}>
+                  <Ionicons name="lock-closed-outline" size={22} color="#666" style={styles.adminInputIcon} />
                   <TextInput
-                    ref={adminPasswordRef}
-                    style={[styles.input, Platform.OS === 'ios' && styles.inputIOS]}
+                    style={styles.adminInput}
                     placeholder="Contraseña Admin"
                     placeholderTextColor="#666"
-                    value={adminPassword}
+                    defaultValue=""
                     onChangeText={(text) => {
-                      console.log('Admin password changed:', text.length);
                       setAdminPassword(text);
                     }}
-                    secureTextEntry={Platform.OS === 'android'}
+                    secureTextEntry={false}
                     autoCapitalize="none"
                     autoCorrect={false}
-                    autoComplete="off"
-                    textContentType="oneTimeCode"
-                    returnKeyType="done"
-                    onSubmitEditing={handleAdminLogin}
-                    editable={true}
                     keyboardType="default"
-                    contextMenuHidden={false}
-                    caretHidden={false}
-                    pointerEvents="auto"
+                    textContentType="none"
+                    passwordRules=""
+                    importantForAutofill="no"
                   />
                 </View>
-                
-                {Platform.OS === 'ios' && (
-                  <Text style={styles.iosHint}>
-                    Nota: En iOS la contraseña se muestra visible por compatibilidad
-                  </Text>
-                )}
 
                 <TouchableOpacity
                   style={[styles.button, styles.adminButton]}
@@ -282,6 +269,25 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: -8,
     marginBottom: 16,
+  },
+  adminInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1E1E1E',
+    borderRadius: 12,
+    marginBottom: 16,
+    paddingLeft: 16,
+    height: 56,
+  },
+  adminInputIcon: {
+    marginRight: 12,
+  },
+  adminInput: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 16,
+    height: 56,
+    paddingRight: 16,
   },
   button: {
     flexDirection: 'row',
