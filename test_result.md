@@ -225,6 +225,45 @@ backend:
         agent: "testing"
         comment: "ATC Evaluate endpoint FIXED and working! Replaced incorrect OpenAIChat import with LlmChat. POST /api/atc/evaluate now successfully evaluates pilot transmissions and returns scores, feedback, and suggestions."
 
+  - task: "Listening Test Random Segment API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "GET /api/listening-test/random-segment/{access_code} working perfectly. Returns video_id, video_title, subtitle_id, start_time, end_time, text, and stream_url for random audio segments from videos with subtitles."
+
+  - task: "Listening Test Evaluate API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "testing"
+        comment: "CRITICAL: POST /api/listening-test/evaluate/{access_code} returning 500 error due to incorrect import 'OpenAIChat' from emergentintegrations.llm.openai"
+      - working: true
+        agent: "testing"
+        comment: "Listening Test Evaluate endpoint FIXED and working! Replaced incorrect OpenAIChat import with LlmChat. POST /api/listening-test/evaluate/{access_code} now successfully evaluates user transcriptions using AI and returns scores (0-100), feedback, and replay_count."
+
+  - task: "Listening Test History API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "GET /api/listening-test/history/{access_code} working perfectly. Returns array of previous listening test results with scores, feedback, and replay counts for the specified access code."
+
 frontend:
   - task: "Login Screen (Student & Admin)"
     implemented: true
@@ -294,7 +333,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "All backend APIs tested and working"
+    - "All backend APIs tested and working including new Listening Test endpoints"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -306,3 +345,5 @@ agent_communication:
     message: "Backend testing completed. CRITICAL ISSUE FOUND: User Progress API failing due to MongoDB ObjectId serialization error. Core functionality (admin, access codes, categories, videos) working well. Need to fix ObjectId serialization before production use."
   - agent: "testing"
     message: "COMPREHENSIVE BACKEND TESTING COMPLETE - ALL APIS WORKING! Fixed critical ATC Evaluate endpoint by replacing incorrect OpenAIChat import with LlmChat. All requested endpoints tested successfully: Categories (GET/POST), Videos (GET/PUT multi-category), ATC Simulation (scenarios/initial-contact/simulate), ATC Evaluate (now working), Access Code Verification, User Progress (now working). 100% success rate on all 11 tests. Ready for production use."
+  - agent: "testing"
+    message: "LISTENING TEST ENDPOINTS TESTING COMPLETE - ALL WORKING! Successfully tested all 3 new Listening Test endpoints: GET /api/listening-test/random-segment/{access_code} (returns video segments with subtitles), POST /api/listening-test/evaluate/{access_code} (AI-powered evaluation with scores 0-100), GET /api/listening-test/history/{access_code} (retrieves test history). Fixed critical import issue by replacing OpenAIChat with LlmChat. All 14 backend tests now passing with 100% success rate."

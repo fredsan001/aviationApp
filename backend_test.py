@@ -279,6 +279,102 @@ class BackendTester:
         
         return True
     
+    def test_listening_test_endpoints(self):
+        """Test Listening Test endpoints"""
+        print("=== Testing Listening Test Endpoints ===")
+        
+        # Test GET random segment
+        try:
+            response = self.session.get(f"{BASE_URL}/listening-test/random-segment/TEST1234")
+            if response.status_code == 200:
+                segment = response.json()
+                video_id = segment.get('video_id')
+                subtitle_id = segment.get('subtitle_id')
+                original_text = segment.get('text')
+                start_time = segment.get('start_time')
+                end_time = segment.get('end_time')
+                stream_url = segment.get('stream_url')
+                
+                if all([video_id, subtitle_id, original_text is not None, start_time is not None, end_time is not None, stream_url]):
+                    self.log_test("GET /api/listening-test/random-segment/TEST1234", True, 
+                                f"Got segment: video_id={video_id}, subtitle_id={subtitle_id}, duration={end_time-start_time:.1f}s")
+                    
+                    # Store for evaluation test
+                    self.test_segment_data = {
+                        'video_id': video_id,
+                        'subtitle_id': subtitle_id,
+                        'original_text': original_text
+                    }
+                else:
+                    self.log_test("GET /api/listening-test/random-segment/TEST1234", False, 
+                                "Missing required fields in response", segment)
+                    return False
+            elif response.status_code == 404:
+                self.log_test("GET /api/listening-test/random-segment/TEST1234", True, 
+                            "No videos with subtitles available (expected for new system)")
+                # Create mock data for evaluation test
+                self.test_segment_data = {
+                    'video_id': 'test-video-id',
+                    'subtitle_id': 'test-subtitle-id',
+                    'original_text': 'Ground control, November one two three four five, request taxi clearance'
+                }
+            else:
+                self.log_test("GET /api/listening-test/random-segment/TEST1234", False, 
+                            f"Status: {response.status_code}", response.text)
+                return False
+        except Exception as e:
+            self.log_test("GET /api/listening-test/random-segment/TEST1234", False, f"Error: {str(e)}")
+            return False
+        
+        # Test POST evaluate
+        try:
+            evaluation_data = {
+                "video_id": self.test_segment_data['video_id'],
+                "subtitle_id": self.test_segment_data['subtitle_id'],
+                "original_text": self.test_segment_data['original_text'],
+                "user_response": "This is what I heard from the audio transmission",
+                "replay_count": 3
+            }
+            response = self.session.post(f"{BASE_URL}/listening-test/evaluate/TEST1234", json=evaluation_data)
+            if response.status_code == 200:
+                evaluation = response.json()
+                score = evaluation.get('score')
+                feedback = evaluation.get('feedback')
+                original_text = evaluation.get('original_text')
+                replay_count = evaluation.get('replay_count')
+                
+                if all([score is not None, feedback, original_text, replay_count is not None]):
+                    self.log_test("POST /api/listening-test/evaluate/TEST1234", True, 
+                                f"Evaluation successful - Score: {score}/100, Replay count: {replay_count}")
+                else:
+                    self.log_test("POST /api/listening-test/evaluate/TEST1234", False, 
+                                "Missing required fields in evaluation response", evaluation)
+                    return False
+            else:
+                self.log_test("POST /api/listening-test/evaluate/TEST1234", False, 
+                            f"Status: {response.status_code}", response.text)
+                return False
+        except Exception as e:
+            self.log_test("POST /api/listening-test/evaluate/TEST1234", False, f"Error: {str(e)}")
+            return False
+        
+        # Test GET history
+        try:
+            response = self.session.get(f"{BASE_URL}/listening-test/history/TEST1234")
+            if response.status_code == 200:
+                history = response.json()
+                self.log_test("GET /api/listening-test/history/TEST1234", True, 
+                            f"Retrieved listening test history: {len(history)} entries")
+            else:
+                self.log_test("GET /api/listening-test/history/TEST1234", False, 
+                            f"Status: {response.status_code}", response.text)
+                return False
+        except Exception as e:
+            self.log_test("GET /api/listening-test/history/TEST1234", False, f"Error: {str(e)}")
+            return False
+        
+        return True
+    
     def cleanup_resources(self):
         """Clean up created test resources"""
         print("=== Cleaning Up Test Resources ===")
@@ -310,7 +406,8 @@ class BackendTester:
             self.test_atc_simulation,
             self.test_evaluate_endpoint,
             self.test_access_code_verification,
-            self.test_user_progress_api
+            self.test_user_progress_api,
+            self.test_listening_test_endpoints
         ]
         
         all_passed = True

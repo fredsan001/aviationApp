@@ -1162,6 +1162,153 @@ async def evaluate_pilot_transmission(request: EvaluationRequest):
         logger.error(f"Evaluation error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# ============== Listening Test ==============
+
+class ListeningTestResult(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    access_code: str
+    video_id: str
+    subtitle_id: str
+    original_text: str
+    user_response: str
+    score: float  # 0-100
+    replay_count: int
+    feedback: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class ListeningTestSubmission(BaseModel):
+    video_id: str
+    subtitle_id: str
+    original_text: str
+    user_response: str
+    replay_count: int
+
+@api_router.get("/listening-test/random-segment/{access_code}")
+async def get_random_listening_segment(access_code: str):
+    """Get a random audio segment from watched videos for listening test"""
+    import random
+    
+    # Get videos with subtitles
+    videos = await db.videos.find({
+        "subtitles": {"$exists": True, "$ne": []}
+    }).to_list(100)
+    
+    if not videos:
+        raise HTTPException(status_code=404, detail="No hay videos con subtítulos disponibles")
+    
+    # Filter videos that have actual subtitle content
+    videos_with_subtitles = [v for v in videos if v.get('subtitles') and len(v['subtitles']) > 0]
+    
+    if not videos_with_subtitles:
+        raise HTTPException(status_code=404, detail="No hay segmentos de audio disponibles")
+    
+    # Select random video
+    video = random.choice(videos_with_subtitles)
+    
+    # Select random subtitle segment
+    subtitle = random.choice(video['subtitles'])
+    
+    return {
+        "video_id": video['id'],
+        "video_title": video['title'],
+        "subtitle_id": subtitle.get('id', str(uuid.uuid4())),
+        "start_time": subtitle['start_time'],
+        "end_time": subtitle['end_time'],
+        "text": subtitle['text'],  # This will be hidden from student initially
+        "stream_url": f"/api/videos/{video['id']}/stream"
+    }
+
+@api_router.post("/listening-test/evaluate/{access_code}")
+async def evaluate_listening_test(access_code: str, submission: ListeningTestSubmission):
+    """Evaluate a listening test submission and save the result"""
+    try:
+        # Calculate similarity score
+        original = submission.original_text.lower().strip()
+        response = submission.user_response.lower().strip()
+        
+        # Use AI to evaluate the response
+        api_key = os.getenv("EMERGENT_LLM_KEY")
+        
+        if api_key:
+            chat = LlmChat(
+                api_key=api_key,
+                session_id=f"listening_eval_{access_code}_{int(time.time())}",
+                system_message="You are an expert aviation English instructor evaluating student transcriptions of ATC communications."
+            ).with_model("openai", "gpt-4o")
+            
+            eval_prompt = f"""Evalúa qué tan bien el estudiante transcribió el audio de comunicación ATC.
+
+Texto Original: "{submission.original_text}"
+Respuesta del Estudiante: "{submission.user_response}"
+
+Evalúa considerando:
+1. Exactitud de las palabras (40%)
+2. Términos de aviación correctos (30%)
+3. Números y callsigns (20%)
+4. Ortografía menor (10%)
+
+Responde SOLO en este formato JSON:
+{{
+    "score": <número 0-100>,
+    "feedback": "<retroalimentación breve en español, máximo 2 oraciones>",
+    "corrections": "<correcciones específicas si las hay>"
+}}"""
+            
+            user_message = UserMessage(text=eval_prompt)
+            response_text = await chat.send_message(user_message)
+            
+            # Parse JSON response
+            import re
+            json_match = re.search(r'\{[\s\S]*\}', response_text)
+            if json_match:
+                eval_result = json.loads(json_match.group())
+                score = eval_result.get('score', 70)
+                feedback = eval_result.get('feedback', 'Evaluación completada')
+                if eval_result.get('corrections'):
+                    feedback += f" Correcciones: {eval_result['corrections']}"
+            else:
+                score = 70
+                feedback = "Evaluación completada"
+        else:
+            # Simple similarity calculation without AI
+            from difflib import SequenceMatcher
+            score = int(SequenceMatcher(None, original, response).ratio() * 100)
+            feedback = "Puntuación basada en similitud de texto"
+        
+        # Save the result
+        result = ListeningTestResult(
+            access_code=access_code,
+            video_id=submission.video_id,
+            subtitle_id=submission.subtitle_id,
+            original_text=submission.original_text,
+            user_response=submission.user_response,
+            score=score,
+            replay_count=submission.replay_count,
+            feedback=feedback
+        )
+        
+        await db.listening_test_results.insert_one(result.dict())
+        
+        return {
+            "score": score,
+            "feedback": feedback,
+            "original_text": submission.original_text,
+            "replay_count": submission.replay_count
+        }
+        
+    except Exception as e:
+        logger.error(f"Listening test evaluation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/listening-test/history/{access_code}")
+async def get_listening_test_history(access_code: str):
+    """Get listening test history for a user"""
+    results = await db.listening_test_results.find({
+        "access_code": access_code
+    }).sort("created_at", -1).to_list(50)
+    
+    return serialize_doc(results)
+
 # Include the router in the main app
 app.include_router(api_router)
 

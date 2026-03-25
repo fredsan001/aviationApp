@@ -165,6 +165,26 @@ export const apiService = {
     });
     return response.data;
   },
+
+  // Listening Test
+  getRandomListeningSegment: async (accessCode: string) => {
+    const response = await api.get(`/listening-test/random-segment/${accessCode}`);
+    return response.data;
+  },
+  evaluateListeningTest: async (accessCode: string, data: {
+    video_id: string;
+    subtitle_id: string;
+    original_text: string;
+    user_response: string;
+    replay_count: number;
+  }) => {
+    const response = await api.post(`/listening-test/evaluate/${accessCode}`, data);
+    return response.data;
+  },
+  getListeningTestHistory: async (accessCode: string) => {
+    const response = await api.get(`/listening-test/history/${accessCode}`);
+    return response.data;
+  },
 };
 
 export default api;
