@@ -660,7 +660,7 @@ export default function PracticeScreen() {
           <View style={styles.levelSelectorContainer}>
             <Text style={styles.levelLabel}>Nivel de dificultad:</Text>
             <View style={styles.levelSelector}>
-              {[1, 2, 3, 4].map((level) => (
+              {[1, 2, 3].map((level) => (
                 <TouchableOpacity
                   key={level}
                   style={[
@@ -684,8 +684,7 @@ export default function PracticeScreen() {
             <Text style={styles.levelDescription}>
               {selectedLevel === 1 && '0-5 seg (Fácil)'}
               {selectedLevel === 2 && '5-10 seg (Intermedio)'}
-              {selectedLevel === 3 && '10-20 seg (Avanzado)'}
-              {selectedLevel === 4 && '20+ seg (Experto)'}
+              {selectedLevel === 3 && '10+ seg (Avanzado)'}
             </Text>
           </View>
 

@@ -1194,9 +1194,8 @@ async def get_random_listening_segment(access_code: str, level: int = 1):
     
     Levels:
     - Level 1: Shortest segments (0-5 seconds)
-    - Level 2: Short segments (5-10 seconds)
-    - Level 3: Medium segments (10-20 seconds)
-    - Level 4: Long segments (20+ seconds)
+    - Level 2: Medium segments (5-10 seconds)
+    - Level 3: Long segments (10+ seconds)
     """
     import random
     
@@ -1204,8 +1203,7 @@ async def get_random_listening_segment(access_code: str, level: int = 1):
     level_ranges = {
         1: (0, 5),
         2: (5, 10),
-        3: (10, 20),
-        4: (20, 999)  # 20+ seconds
+        3: (10, 9999)  # 10+ seconds
     }
     
     # Validate level
@@ -1245,12 +1243,15 @@ async def get_random_listening_segment(access_code: str, level: int = 1):
     for video in videos_with_subtitles:
         for subtitle in video['subtitles']:
             duration = subtitle.get('end_time', 0) - subtitle.get('start_time', 0)
+            # Strict filtering by duration range
             if min_duration <= duration < max_duration:
                 matching_segments.append({
                     'video': video,
                     'subtitle': subtitle,
                     'duration': duration
                 })
+    
+    logger.info(f"Level {level}: Found {len(matching_segments)} segments in range {min_duration}-{max_duration}s")
     
     # If no segments match the level, try to find closest ones
     if not matching_segments:
@@ -1268,28 +1269,30 @@ async def get_random_listening_segment(access_code: str, level: int = 1):
         if not all_segments:
             raise HTTPException(status_code=404, detail="No hay segmentos de audio disponibles")
         
-        # Sort by duration and select based on level
+        # Sort by duration
         all_segments.sort(key=lambda x: x['duration'])
         
-        # Divide into quartiles based on level
+        # Divide into thirds based on level
         total = len(all_segments)
         if level == 1:
-            matching_segments = all_segments[:max(1, total // 4)]
+            matching_segments = all_segments[:max(1, total // 3)]
         elif level == 2:
-            matching_segments = all_segments[total // 4:total // 2]
-        elif level == 3:
-            matching_segments = all_segments[total // 2:3 * total // 4]
-        else:  # level 4
-            matching_segments = all_segments[3 * total // 4:]
+            matching_segments = all_segments[total // 3:2 * total // 3]
+        else:  # level 3
+            matching_segments = all_segments[2 * total // 3:]
         
         # Fallback if still empty
         if not matching_segments:
             matching_segments = all_segments
+            
+        logger.info(f"Level {level}: Using fallback - {len(matching_segments)} segments")
     
     # Select random segment from matching ones
     selected = random.choice(matching_segments)
     video = selected['video']
     subtitle = selected['subtitle']
+    
+    logger.info(f"Selected segment duration: {selected['duration']}s for level {level}")
     
     return {
         "video_id": video['id'],
