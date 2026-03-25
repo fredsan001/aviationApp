@@ -5,6 +5,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from fastapi.responses import StreamingResponse, Response
 import os
 import logging
+import json
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional
@@ -13,6 +14,7 @@ from datetime import datetime
 import base64
 import aiofiles
 import asyncio
+import time
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -1117,14 +1119,12 @@ async def evaluate_pilot_transmission(request: EvaluationRequest):
         {f"Expected context: {request.expected_context}" if request.expected_context else ""}
         """
         
-        # Use session_id for evaluation
-        eval_session_id = f"eval_{datetime.utcnow().timestamp()}"
-        
+        # Use LlmChat for evaluation
         chat = LlmChat(
             api_key=api_key,
-            session_id=eval_session_id,
+            session_id=f"eval_{request.scenario_id}_{int(time.time())}",
             system_message=EVALUATION_SYSTEM_PROMPT
-        ).with_model("openai", "gpt-4.1")
+        ).with_model("openai", "gpt-4o")
         
         user_message = UserMessage(text=context)
         response = await chat.send_message(user_message)

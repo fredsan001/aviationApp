@@ -446,7 +446,6 @@ export default function UploadVideo() {
                 <Text style={styles.createCategoryText}>Crear Nueva Categoría</Text>
               </TouchableOpacity>
             )}
-            )}
           </View>
         </View>
       </Modal>

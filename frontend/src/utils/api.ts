@@ -22,8 +22,8 @@ export const apiService = {
     const response = await api.get('/categories');
     return response.data;
   },
-  createCategory: async (name: string, description: string) => {
-    const response = await api.post('/categories', { name, description });
+  createCategory: async (data: { name: string; description?: string }) => {
+    const response = await api.post('/categories', data);
     return response.data;
   },
   deleteCategory: async (id: string) => {
@@ -55,7 +55,7 @@ export const apiService = {
     });
     return response.data;
   },
-  updateVideo: async (id: string, data: { title?: string; description?: string; category?: string; subtitles?: any[] }) => {
+  updateVideo: async (id: string, data: { title?: string; description?: string; category?: string; categories?: string[]; subtitles?: any[] }) => {
     const response = await api.put(`/videos/${id}`, data);
     return response.data;
   },
