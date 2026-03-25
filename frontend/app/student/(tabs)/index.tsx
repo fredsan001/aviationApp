@@ -31,8 +31,33 @@ export default function StudentVideos() {
   const [progressMap, setProgressMap] = useState<Map<string, any>>(new Map());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [viewMode, setViewMode] = useState<'all' | 'path'>('all');
   
   const { clientName, accessCode } = useAppStore();
+
+  // Special categories (Row 1)
+  const specialCategories = [
+    { id: '__watched__', name: 'Vistos', icon: 'eye', color: '#4CAF50' },
+    { id: '__unwatched__', name: 'No Vistos', icon: 'eye-off', color: '#FF9800' },
+    { id: '__ready__', name: 'A Evaluar', icon: 'school', color: '#9C27B0' },
+  ];
+
+  // Regular categories (Row 2)
+  const regularCategories = [
+    { id: 'all', name: 'Todos' },
+    ...categories
+  ];
+
+  // Displayed videos based on view mode
+  const displayedVideos = viewMode === 'path' 
+    ? [...videos].sort((a, b) => {
+        // Sort by category order first, then by video order
+        const catA = categories.findIndex(c => c.name === a.category);
+        const catB = categories.findIndex(c => c.name === b.category);
+        if (catA !== catB) return catA - catB;
+        return (a.order || 0) - (b.order || 0);
+      })
+    : videos;
 
   const fetchData = async () => {
     try {
@@ -210,15 +235,6 @@ export default function StudentVideos() {
     );
   };
 
-  // Build categories list with special categories
-  const allCategories = [
-    { id: 'all', name: 'Todos' },
-    { id: '__watched__', name: 'Vistos', icon: 'eye' },
-    { id: '__unwatched__', name: 'No Vistos', icon: 'eye-off' },
-    { id: '__ready__', name: 'Listos', icon: 'school' },
-    ...categories
-  ];
-
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -243,73 +259,84 @@ export default function StudentVideos() {
         </TouchableOpacity>
       </View>
 
-      {/* Categories */}
+      {/* View Mode Selector */}
+      <View style={styles.viewModeContainer}>
+        <TouchableOpacity
+          style={[styles.viewModeButton, viewMode === 'all' && styles.viewModeButtonActive]}
+          onPress={() => setViewMode('all')}
+        >
+          <Ionicons name="grid" size={18} color={viewMode === 'all' ? '#fff' : '#888'} />
+          <Text style={[styles.viewModeText, viewMode === 'all' && styles.viewModeTextActive]}>Todos</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.viewModeButton, viewMode === 'path' && styles.viewModeButtonActive]}
+          onPress={() => setViewMode('path')}
+        >
+          <Ionicons name="navigate" size={18} color={viewMode === 'path' ? '#fff' : '#888'} />
+          <Text style={[styles.viewModeText, viewMode === 'path' && styles.viewModeTextActive]}>Path</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Special Categories (Row 1) */}
+      <View style={styles.specialCategoriesRow}>
+        {specialCategories.map((item) => {
+          const isActive = selectedCategory === item.id;
+          return (
+            <TouchableOpacity
+              key={item.id}
+              style={[
+                styles.specialCategoryChip,
+                item.id === '__watched__' && styles.watchedChip,
+                item.id === '__watched__' && isActive && styles.watchedChipActive,
+                item.id === '__unwatched__' && styles.unwatchedChip,
+                item.id === '__unwatched__' && isActive && styles.unwatchedChipActive,
+                item.id === '__ready__' && styles.readyChip,
+                item.id === '__ready__' && isActive && styles.readyChipActive,
+              ]}
+              onPress={() => setSelectedCategory(isActive ? null : item.id)}
+            >
+              <Ionicons 
+                name={item.icon as any} 
+                size={14} 
+                color={isActive ? '#fff' : item.color} 
+              />
+              <Text style={[
+                styles.specialCategoryText,
+                { color: isActive ? '#fff' : item.color }
+              ]}>
+                {item.name}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {/* Regular Categories (Row 2) */}
       <View style={styles.categoriesContainer}>
         <FlatList
           horizontal
-          data={allCategories}
+          data={regularCategories}
           renderItem={({ item }) => {
-            const isActive = (item.id === 'all' && !selectedCategory) || 
-                            selectedCategory === item.id ||
-                            (item.id !== 'all' && item.id !== '__watched__' && item.id !== '__unwatched__' && item.id !== '__ready__' && selectedCategory === item.name);
-            
-            const isWatchedType = item.id === '__watched__';
-            const isUnwatchedType = item.id === '__unwatched__';
-            const isReadyType = item.id === '__ready__';
+            const isActive = selectedCategory === item.name || (item.id === 'all' && !selectedCategory);
             
             return (
               <TouchableOpacity
                 style={[
                   styles.categoryChip,
                   isActive && styles.categoryChipActive,
-                  isWatchedType && styles.watchedChip,
-                  isWatchedType && isActive && styles.watchedChipActive,
-                  isUnwatchedType && styles.unwatchedChip,
-                  isUnwatchedType && isActive && styles.unwatchedChipActive,
-                  isReadyType && styles.readyChip,
-                  isReadyType && isActive && styles.readyChipActive,
                 ]}
                 onPress={() => {
                   if (item.id === 'all') {
                     setSelectedCategory(null);
-                  } else if (item.id === '__watched__' || item.id === '__unwatched__' || item.id === '__ready__') {
-                    setSelectedCategory(item.id);
                   } else {
                     setSelectedCategory(item.name);
                   }
                 }}
               >
-                {isWatchedType && (
-                  <Ionicons 
-                    name="eye" 
-                    size={14} 
-                    color={isActive ? '#fff' : '#4CAF50'} 
-                    style={{ marginRight: 4 }}
-                  />
-                )}
-                {isUnwatchedType && (
-                  <Ionicons 
-                    name="eye-off" 
-                    size={14} 
-                    color={isActive ? '#fff' : '#FF9800'} 
-                    style={{ marginRight: 4 }}
-                  />
-                )}
-                {isReadyType && (
-                  <Ionicons 
-                    name="school" 
-                    size={14} 
-                    color={isActive ? '#fff' : '#9C27B0'} 
-                    style={{ marginRight: 4 }}
-                  />
-                )}
                 <Text
                   style={[
                     styles.categoryChipText,
                     isActive && styles.categoryChipTextActive,
-                    isWatchedType && !isActive && styles.watchedChipText,
-                    isUnwatchedType && !isActive && styles.unwatchedChipText,
-                    isReadyType && !isActive && styles.readyChipText,
                   ]}
                 >
                   {item.name}
@@ -325,7 +352,7 @@ export default function StudentVideos() {
 
       {/* Videos */}
       <FlatList
-        data={videos}
+        data={displayedVideos}
         renderItem={renderVideo}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.videosList}
@@ -392,6 +419,52 @@ const styles = StyleSheet.create({
     padding: 8,
     backgroundColor: '#1E1E1E',
     borderRadius: 8,
+  },
+  viewModeContainer: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    backgroundColor: '#1E1E1E',
+    borderRadius: 10,
+    padding: 4,
+  },
+  viewModeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 6,
+  },
+  viewModeButtonActive: {
+    backgroundColor: '#2196F3',
+  },
+  viewModeText: {
+    color: '#888',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  viewModeTextActive: {
+    color: '#fff',
+  },
+  specialCategoriesRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    marginBottom: 8,
+    gap: 8,
+  },
+  specialCategoryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 6,
+  },
+  specialCategoryText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   categoriesContainer: {
     marginBottom: 8,

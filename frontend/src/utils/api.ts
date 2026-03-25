@@ -230,6 +230,20 @@ export const apiService = {
     });
     return response.data;
   },
+
+  // App Settings
+  getAppSettings: async () => {
+    const response = await api.get('/settings');
+    return response.data;
+  },
+  updateAppSettings: async (settings: { help_content?: string; intro_video_id?: string | null }) => {
+    const response = await api.put('/settings', settings);
+    return response.data;
+  },
+  getIntroVideo: async () => {
+    const response = await api.get('/settings/intro-video');
+    return response.data;
+  },
 };
 
 export default api;

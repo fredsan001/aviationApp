@@ -541,40 +541,6 @@ export default function VideoPlayer() {
                   English
                 </Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[
-                  styles.langBtn, 
-                  subtitleLanguage === 'es' && styles.langBtnActive,
-                  !(video as any).subtitles_translated && styles.langBtnDisabled
-                ]}
-                onPress={() => {
-                  if ((video as any).subtitles_translated) {
-                    setSubtitleLanguage('es');
-                  } else {
-                    Alert.alert(
-                      'Traducir',
-                      '¿Traducir subtítulos al español?',
-                      [
-                        { text: 'No', style: 'cancel' },
-                        { text: 'Sí', onPress: translateSubtitles }
-                      ]
-                    );
-                  }
-                }}
-                disabled={translating}
-              >
-                {translating ? (
-                  <ActivityIndicator size="small" color="#2196F3" />
-                ) : (
-                  <Text style={[
-                    styles.langText, 
-                    subtitleLanguage === 'es' && styles.langTextActive,
-                  ]}>
-                    Español
-                  </Text>
-                )}
-              </TouchableOpacity>
             </View>
           </View>
         )}
@@ -842,14 +808,14 @@ const styles = StyleSheet.create({
   },
   subtitleChip: {
     backgroundColor: '#1E1E1E',
-    padding: 8,
-    borderRadius: 6,
-    marginRight: 8,
-    width: 130,
+    padding: 12,
+    borderRadius: 8,
+    marginRight: 10,
+    width: 160,
   },
   subtitleChipCurrent: {
     backgroundColor: '#2A2A2A',
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: '#2196F3',
   },
   subtitleChipSelected: {
@@ -861,16 +827,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   subtitleChipTime: {
     color: '#4CAF50',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
   },
   subtitleChipText: {
     color: '#fff',
-    fontSize: 11,
-    lineHeight: 14,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '500',
   },
 });

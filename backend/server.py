@@ -1491,6 +1491,49 @@ async def transcribe_audio(audio: UploadFile = File(...)):
             os.remove(temp_path)
         raise HTTPException(status_code=500, detail=str(e))
 
+# ============== App Settings (Help & Intro Video) ==============
+
+class AppSettings(BaseModel):
+    help_content: str = ""
+    intro_video_id: Optional[str] = None
+
+@api_router.get("/settings")
+async def get_app_settings():
+    """Get app settings (help content and intro video)"""
+    settings = await db.app_settings.find_one({"_id": "main"})
+    if not settings:
+        return {"help_content": "", "intro_video_id": None}
+    return {
+        "help_content": settings.get("help_content", ""),
+        "intro_video_id": settings.get("intro_video_id")
+    }
+
+@api_router.put("/settings")
+async def update_app_settings(settings: AppSettings):
+    """Update app settings (admin only)"""
+    await db.app_settings.update_one(
+        {"_id": "main"},
+        {"$set": {
+            "help_content": settings.help_content,
+            "intro_video_id": settings.intro_video_id
+        }},
+        upsert=True
+    )
+    return {"message": "Settings updated", **settings.dict()}
+
+@api_router.get("/settings/intro-video")
+async def get_intro_video():
+    """Get intro video details"""
+    settings = await db.app_settings.find_one({"_id": "main"})
+    if not settings or not settings.get("intro_video_id"):
+        return {"video": None}
+    
+    video = await db.videos.find_one({"id": settings["intro_video_id"]})
+    if not video:
+        return {"video": None}
+    
+    return {"video": serialize_doc(video)}
+
 # Include the router in the main app
 app.include_router(api_router)
 

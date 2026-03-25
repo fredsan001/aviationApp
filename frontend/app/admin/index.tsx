@@ -44,6 +44,13 @@ export default function AdminDashboard() {
       route: '/admin/categories',
       color: '#FF9800',
     },
+    {
+      icon: 'settings',
+      title: 'Settings',
+      description: 'Help content & intro video',
+      route: '/admin/settings',
+      color: '#00BCD4',
+    },
   ];
 
   const handleLogout = async () => {

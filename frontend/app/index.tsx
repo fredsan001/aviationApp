@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,23 +11,42 @@ import {
   Platform,
   ScrollView,
   Keyboard,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAppStore } from '../src/store/appStore';
 import { apiService } from '../src/utils/api';
+import { Video as ExpoVideo, ResizeMode } from 'expo-av';
 
 export default function HomeScreen() {
   const [accessCode, setAccessCode] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [introVideo, setIntroVideo] = useState<any>(null);
+  const [showIntroModal, setShowIntroModal] = useState(false);
   
   const accessCodeRef = useRef<TextInput>(null);
   const adminPasswordRef = useRef<TextInput>(null);
   
   const { setAdmin, setAccessCode: storeAccessCode } = useAppStore();
+
+  useEffect(() => {
+    loadIntroVideo();
+  }, []);
+
+  const loadIntroVideo = async () => {
+    try {
+      const result = await apiService.getIntroVideo();
+      if (result.video) {
+        setIntroVideo(result.video);
+      }
+    } catch (error) {
+      console.error('Error loading intro video:', error);
+    }
+  };
 
   const handleStudentLogin = async () => {
     Keyboard.dismiss();
@@ -117,6 +136,17 @@ export default function HomeScreen() {
             </View>
             <Text style={styles.title}>AeroEnglish</Text>
             <Text style={styles.subtitle}>Comunicaciones Aeronáuticas</Text>
+            
+            {/* Intro Video Button */}
+            {introVideo && (
+              <TouchableOpacity
+                style={styles.introVideoButton}
+                onPress={() => setShowIntroModal(true)}
+              >
+                <Ionicons name="play-circle" size={20} color="#FF9800" />
+                <Text style={styles.introVideoText}>Ver Video Introductorio</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           <View style={styles.content}>
@@ -261,6 +291,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#888',
     textAlign: 'center',
+  },
+  introVideoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#FF980020',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#FF9800',
+    gap: 8,
+  },
+  introVideoText: {
+    color: '#FF9800',
+    fontSize: 14,
+    fontWeight: '600',
   },
   content: {
     marginBottom: 40,
