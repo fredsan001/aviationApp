@@ -114,6 +114,7 @@ class UserProgress(BaseModel):
     last_position: float = 0
     is_favorite: bool = False
     completed: bool = False
+    ready_for_evaluation: bool = False
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 class UserProgressUpdate(BaseModel):
@@ -121,6 +122,7 @@ class UserProgressUpdate(BaseModel):
     last_position: Optional[float] = None
     is_favorite: Optional[bool] = None
     completed: Optional[bool] = None
+    ready_for_evaluation: Optional[bool] = None
 
 # ============== Helper Functions ==============
 
@@ -763,6 +765,8 @@ async def update_user_progress(access_code: str, video_id: str, update: UserProg
             update_data["is_favorite"] = update.is_favorite
         if update.completed is not None:
             update_data["completed"] = update.completed
+        if update.ready_for_evaluation is not None:
+            update_data["ready_for_evaluation"] = update.ready_for_evaluation
         if update.watched_count is not None:
             # Increment watched_count instead of replacing
             update_data["watched_count"] = progress.get("watched_count", 0) + update.watched_count
@@ -779,7 +783,8 @@ async def update_user_progress(access_code: str, video_id: str, update: UserProg
             watched_count=update.watched_count or 1,
             last_position=update.last_position or 0,
             is_favorite=update.is_favorite or False,
-            completed=update.completed or False
+            completed=update.completed or False,
+            ready_for_evaluation=update.ready_for_evaluation or False
         )
         await db.user_progress.insert_one(new_progress.dict())
     
@@ -1185,16 +1190,28 @@ class ListeningTestSubmission(BaseModel):
 
 @api_router.get("/listening-test/random-segment/{access_code}")
 async def get_random_listening_segment(access_code: str):
-    """Get a random audio segment from watched videos for listening test"""
+    """Get a random audio segment from videos marked as ready for evaluation"""
     import random
     
-    # Get videos with subtitles
+    # Get videos that the student marked as ready for evaluation
+    ready_progress = await db.user_progress.find({
+        "access_code": access_code,
+        "ready_for_evaluation": True
+    }).to_list(100)
+    
+    ready_video_ids = [p['video_id'] for p in ready_progress]
+    
+    if not ready_video_ids:
+        raise HTTPException(status_code=404, detail="No hay videos marcados como listos para evaluación. Marca algunos videos en la sección de Videos.")
+    
+    # Get videos with subtitles that are marked as ready
     videos = await db.videos.find({
+        "id": {"$in": ready_video_ids},
         "subtitles": {"$exists": True, "$ne": []}
     }).to_list(100)
     
     if not videos:
-        raise HTTPException(status_code=404, detail="No hay videos con subtítulos disponibles")
+        raise HTTPException(status_code=404, detail="Los videos marcados no tienen subtítulos disponibles")
     
     # Filter videos that have actual subtitle content
     videos_with_subtitles = [v for v in videos if v.get('subtitles') and len(v['subtitles']) > 0]
@@ -1202,11 +1219,30 @@ async def get_random_listening_segment(access_code: str):
     if not videos_with_subtitles:
         raise HTTPException(status_code=404, detail="No hay segmentos de audio disponibles")
     
-    # Select random video
-    video = random.choice(videos_with_subtitles)
+    # Collect all subtitles from all ready videos with their video info
+    all_segments = []
+    for video in videos_with_subtitles:
+        for subtitle in video['subtitles']:
+            duration = subtitle.get('end_time', 0) - subtitle.get('start_time', 0)
+            all_segments.append({
+                'video': video,
+                'subtitle': subtitle,
+                'duration': duration
+            })
     
-    # Select random subtitle segment
-    subtitle = random.choice(video['subtitles'])
+    if not all_segments:
+        raise HTTPException(status_code=404, detail="No hay segmentos de audio disponibles")
+    
+    # Sort by duration (shortest first) and pick from the shortest ones
+    all_segments.sort(key=lambda x: x['duration'])
+    
+    # Take from the shortest 50% of segments to prioritize shorter ones
+    short_segments = all_segments[:max(1, len(all_segments) // 2)]
+    
+    # Select random segment from the short ones
+    selected = random.choice(short_segments)
+    video = selected['video']
+    subtitle = selected['subtitle']
     
     return {
         "video_id": video['id'],
@@ -1214,7 +1250,8 @@ async def get_random_listening_segment(access_code: str):
         "subtitle_id": subtitle.get('id', str(uuid.uuid4())),
         "start_time": subtitle['start_time'],
         "end_time": subtitle['end_time'],
-        "text": subtitle['text'],  # This will be hidden from student initially
+        "duration": selected['duration'],
+        "text": subtitle['text'],
         "stream_url": f"/api/videos/{video['id']}/stream"
     }
 
@@ -1308,6 +1345,38 @@ async def get_listening_test_history(access_code: str):
     }).sort("created_at", -1).to_list(50)
     
     return serialize_doc(results)
+
+@api_router.post("/transcribe-audio")
+async def transcribe_audio(audio: UploadFile = File(...)):
+    """Transcribe audio using OpenAI Whisper"""
+    try:
+        api_key = os.getenv("EMERGENT_LLM_KEY")
+        if not api_key:
+            raise HTTPException(status_code=500, detail="API key not configured")
+        
+        # Save audio to temp file
+        temp_path = f"/tmp/audio_{uuid.uuid4()}.wav"
+        async with aiofiles.open(temp_path, 'wb') as f:
+            content = await audio.read()
+            await f.write(content)
+        
+        # Use OpenAI Whisper for transcription
+        from emergentintegrations.llm.openai import OpenAISpeechToText
+        
+        stt = OpenAISpeechToText(api_key=api_key)
+        transcription = await stt.transcribe(temp_path)
+        
+        # Clean up
+        os.remove(temp_path)
+        
+        return {"transcription": transcription}
+        
+    except Exception as e:
+        logger.error(f"Transcription error: {e}")
+        # Clean up on error
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Include the router in the main app
 app.include_router(api_router)

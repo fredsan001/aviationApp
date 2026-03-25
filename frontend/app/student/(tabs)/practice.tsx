@@ -102,6 +102,10 @@ export default function PracticeScreen() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [listeningResult, setListeningResult] = useState<any>(null);
   const [showListeningResult, setShowListeningResult] = useState(false);
+  const [responseMode, setResponseMode] = useState<'text' | 'voice'>('text');
+  const [isListeningRecording, setIsListeningRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const listeningRecordingRef = useRef<Audio.Recording | null>(null);
   
   const { accessCode } = useAppStore();
   const soundRef = useRef<Audio.Sound | null>(null);
@@ -436,6 +440,54 @@ export default function PracticeScreen() {
     }
   };
 
+  // Voice recording for listening test
+  const startListeningRecording = async () => {
+    const hasPermission = await requestMicPermission();
+    if (!hasPermission) return;
+
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const recording = new Audio.Recording();
+      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await recording.startAsync();
+      listeningRecordingRef.current = recording;
+      setIsListeningRecording(true);
+    } catch (e) {
+      console.error('Recording error:', e);
+      Alert.alert('Error', 'No se pudo iniciar la grabación');
+    }
+  };
+
+  const stopListeningRecording = async () => {
+    if (!listeningRecordingRef.current) return;
+    
+    setIsListeningRecording(false);
+    setIsTranscribing(true);
+    
+    try {
+      await listeningRecordingRef.current.stopAndUnloadAsync();
+      const uri = listeningRecordingRef.current.getURI();
+      listeningRecordingRef.current = null;
+      
+      if (uri) {
+        // Transcribe the audio
+        const result = await apiService.transcribeAudio(uri);
+        if (result.transcription) {
+          setUserResponse(result.transcription);
+        }
+      }
+    } catch (e) {
+      console.error('Stop recording error:', e);
+      Alert.alert('Error', 'No se pudo procesar el audio');
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
+
   const submitListeningResponse = async () => {
     if (!listeningSegment || !userResponse.trim()) {
       Alert.alert('Error', 'Por favor escribe lo que escuchaste');
@@ -616,19 +668,72 @@ export default function PracticeScreen() {
             </Text>
           </View>
 
+          {/* Response Mode Selector */}
+          <View style={styles.responseModeSelector}>
+            <TouchableOpacity
+              style={[styles.modeButton, responseMode === 'text' && styles.modeButtonActive]}
+              onPress={() => setResponseMode('text')}
+            >
+              <Ionicons name="text" size={18} color={responseMode === 'text' ? '#fff' : '#888'} />
+              <Text style={[styles.modeButtonText, responseMode === 'text' && styles.modeButtonTextActive]}>Texto</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modeButton, responseMode === 'voice' && styles.modeButtonActive]}
+              onPress={() => setResponseMode('voice')}
+            >
+              <Ionicons name="mic" size={18} color={responseMode === 'voice' ? '#fff' : '#888'} />
+              <Text style={[styles.modeButtonText, responseMode === 'voice' && styles.modeButtonTextActive]}>Voz</Text>
+            </TouchableOpacity>
+          </View>
+
           {/* Response Input */}
           <View style={styles.responseSection}>
             <Text style={styles.responseLabel}>Tu transcripción:</Text>
-            <TextInput
-              style={styles.responseInput}
-              value={userResponse}
-              onChangeText={setUserResponse}
-              placeholder="Escribe lo que escuchaste..."
-              placeholderTextColor="#666"
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-            />
+            
+            {responseMode === 'voice' ? (
+              <View style={styles.voiceInputContainer}>
+                {isTranscribing ? (
+                  <View style={styles.transcribingContainer}>
+                    <ActivityIndicator size="large" color="#9C27B0" />
+                    <Text style={styles.transcribingText}>Transcribiendo...</Text>
+                  </View>
+                ) : (
+                  <>
+                    <TouchableOpacity
+                      style={[styles.voiceRecordButton, isListeningRecording && styles.voiceRecordButtonActive]}
+                      onPress={isListeningRecording ? stopListeningRecording : startListeningRecording}
+                    >
+                      <Ionicons 
+                        name={isListeningRecording ? "stop" : "mic"} 
+                        size={40} 
+                        color="#fff" 
+                      />
+                    </TouchableOpacity>
+                    <Text style={styles.voiceInstructions}>
+                      {isListeningRecording ? 'Grabando... Toca para detener' : 'Toca para grabar tu respuesta'}
+                    </Text>
+                  </>
+                )}
+                
+                {userResponse.trim() && (
+                  <View style={styles.transcriptionPreview}>
+                    <Text style={styles.transcriptionPreviewLabel}>Transcripción:</Text>
+                    <Text style={styles.transcriptionPreviewText}>{userResponse}</Text>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <TextInput
+                style={styles.responseInput}
+                value={userResponse}
+                onChangeText={setUserResponse}
+                placeholder="Escribe lo que escuchaste..."
+                placeholderTextColor="#666"
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+              />
+            )}
           </View>
 
           {/* Submit Button */}
@@ -1214,6 +1319,85 @@ const styles = StyleSheet.create({
     fontSize: 16,
     minHeight: 120,
     textAlignVertical: 'top',
+  },
+  responseModeSelector: {
+    flexDirection: 'row',
+    backgroundColor: '#1E1E1E',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 16,
+  },
+  modeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  modeButtonActive: {
+    backgroundColor: '#2196F3',
+  },
+  modeButtonText: {
+    color: '#888',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  modeButtonTextActive: {
+    color: '#fff',
+  },
+  voiceInputContainer: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 12,
+    padding: 24,
+    alignItems: 'center',
+    minHeight: 180,
+    justifyContent: 'center',
+  },
+  voiceRecordButton: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#F44336',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  voiceRecordButtonActive: {
+    backgroundColor: '#4CAF50',
+  },
+  voiceInstructions: {
+    color: '#888',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  transcribingContainer: {
+    alignItems: 'center',
+    gap: 16,
+  },
+  transcribingText: {
+    color: '#9C27B0',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  transcriptionPreview: {
+    backgroundColor: '#0D0D0D',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 16,
+    width: '100%',
+  },
+  transcriptionPreviewLabel: {
+    color: '#4CAF50',
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  transcriptionPreviewText: {
+    color: '#fff',
+    fontSize: 14,
+    lineHeight: 20,
   },
   submitButton: {
     flexDirection: 'row',

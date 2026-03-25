@@ -20,6 +20,7 @@ interface VideoWithProgress extends Video {
   watched_count?: number;
   completed?: boolean;
   last_position?: number;
+  ready_for_evaluation?: boolean;
 }
 
 export default function StudentVideos() {
@@ -27,6 +28,7 @@ export default function StudentVideos() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [watchedVideoIds, setWatchedVideoIds] = useState<Set<string>>(new Set());
+  const [progressMap, setProgressMap] = useState<Map<string, any>>(new Map());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
@@ -38,26 +40,57 @@ export default function StudentVideos() {
       const categoriesData = await apiService.getCategories();
       setCategories(categoriesData);
       
-      // Also fetch watched videos to mark them
+      // Also fetch watched videos and progress to mark them
       let watchedIds = new Set<string>();
+      let progressData = new Map<string, any>();
+      
       if (accessCode) {
         const watched = await apiService.getWatchedVideos(accessCode);
         watchedIds = new Set(watched.map((v: VideoWithProgress) => v.id));
         setWatchedVideoIds(watchedIds);
+        
+        // Get full progress for ready_for_evaluation status
+        const progress = await apiService.getProgress(accessCode);
+        progress.forEach((p: any) => {
+          progressData.set(p.video_id, p);
+        });
+        setProgressMap(progressData);
       }
       
       // Handle special categories
       if (selectedCategory === '__watched__') {
         const watchedVideos = await apiService.getWatchedVideos(accessCode);
-        setVideos(watchedVideos);
+        // Merge progress data
+        const videosWithProgress = watchedVideos.map((v: VideoWithProgress) => ({
+          ...v,
+          ready_for_evaluation: progressData.get(v.id)?.ready_for_evaluation || false
+        }));
+        setVideos(videosWithProgress);
       } else if (selectedCategory === '__unwatched__') {
         // Fetch all videos and filter out watched ones
         const allVideos = await apiService.getVideos();
         const unwatchedVideos = allVideos.filter((v: Video) => !v.is_processing && !watchedIds.has(v.id));
         setVideos(unwatchedVideos);
+      } else if (selectedCategory === '__ready__') {
+        // Videos marked as ready for evaluation
+        const allVideos = await apiService.getVideos();
+        const readyVideos = allVideos.filter((v: Video) => {
+          const progress = progressData.get(v.id);
+          return progress?.ready_for_evaluation === true;
+        }).map((v: Video) => ({
+          ...v,
+          ready_for_evaluation: true
+        }));
+        setVideos(readyVideos);
       } else {
         const videosData = await apiService.getVideos(selectedCategory || undefined);
-        setVideos(videosData.filter((v: Video) => !v.is_processing));
+        const videosWithProgress = videosData
+          .filter((v: Video) => !v.is_processing)
+          .map((v: Video) => ({
+            ...v,
+            ready_for_evaluation: progressData.get(v.id)?.ready_for_evaluation || false
+          }));
+        setVideos(videosWithProgress);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -84,9 +117,35 @@ export default function StudentVideos() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const toggleReadyForEvaluation = async (videoId: string, currentState: boolean) => {
+    if (!accessCode) return;
+    
+    try {
+      await apiService.updateProgress(accessCode, videoId, {
+        ready_for_evaluation: !currentState
+      });
+      
+      // Update local state
+      setVideos(prev => prev.map(v => 
+        v.id === videoId ? { ...v, ready_for_evaluation: !currentState } : v
+      ));
+      
+      // Update progress map
+      setProgressMap(prev => {
+        const newMap = new Map(prev);
+        const existing = newMap.get(videoId) || {};
+        newMap.set(videoId, { ...existing, ready_for_evaluation: !currentState });
+        return newMap;
+      });
+    } catch (error) {
+      console.error('Error updating ready status:', error);
+    }
+  };
+
   const renderVideo = ({ item }: { item: VideoWithProgress }) => {
     const thumbnailUrl = apiService.getVideoThumbnailUrl(item.id);
     const isWatched = watchedVideoIds.has(item.id) || item.watched_count && item.watched_count > 0;
+    const isReady = item.ready_for_evaluation || progressMap.get(item.id)?.ready_for_evaluation;
     
     return (
       <TouchableOpacity
@@ -130,6 +189,22 @@ export default function StudentVideos() {
               </View>
             )}
           </View>
+          
+          {/* Ready for Evaluation Checkbox */}
+          <TouchableOpacity
+            style={[styles.readyCheckbox, isReady && styles.readyCheckboxActive]}
+            onPress={(e) => {
+              e.stopPropagation();
+              toggleReadyForEvaluation(item.id, isReady || false);
+            }}
+          >
+            <View style={[styles.checkbox, isReady && styles.checkboxChecked]}>
+              {isReady && <Ionicons name="checkmark" size={14} color="#fff" />}
+            </View>
+            <Text style={[styles.readyLabel, isReady && styles.readyLabelActive]}>
+              Listo para evaluación
+            </Text>
+          </TouchableOpacity>
         </View>
       </TouchableOpacity>
     );
@@ -140,6 +215,7 @@ export default function StudentVideos() {
     { id: 'all', name: 'Todos' },
     { id: '__watched__', name: 'Vistos', icon: 'eye' },
     { id: '__unwatched__', name: 'No Vistos', icon: 'eye-off' },
+    { id: '__ready__', name: 'Listos', icon: 'school' },
     ...categories
   ];
 
@@ -175,10 +251,11 @@ export default function StudentVideos() {
           renderItem={({ item }) => {
             const isActive = (item.id === 'all' && !selectedCategory) || 
                             selectedCategory === item.id ||
-                            (item.id !== 'all' && item.id !== '__watched__' && item.id !== '__unwatched__' && selectedCategory === item.name);
+                            (item.id !== 'all' && item.id !== '__watched__' && item.id !== '__unwatched__' && item.id !== '__ready__' && selectedCategory === item.name);
             
             const isWatchedType = item.id === '__watched__';
             const isUnwatchedType = item.id === '__unwatched__';
+            const isReadyType = item.id === '__ready__';
             
             return (
               <TouchableOpacity
@@ -189,11 +266,13 @@ export default function StudentVideos() {
                   isWatchedType && isActive && styles.watchedChipActive,
                   isUnwatchedType && styles.unwatchedChip,
                   isUnwatchedType && isActive && styles.unwatchedChipActive,
+                  isReadyType && styles.readyChip,
+                  isReadyType && isActive && styles.readyChipActive,
                 ]}
                 onPress={() => {
                   if (item.id === 'all') {
                     setSelectedCategory(null);
-                  } else if (item.id === '__watched__' || item.id === '__unwatched__') {
+                  } else if (item.id === '__watched__' || item.id === '__unwatched__' || item.id === '__ready__') {
                     setSelectedCategory(item.id);
                   } else {
                     setSelectedCategory(item.name);
@@ -216,12 +295,21 @@ export default function StudentVideos() {
                     style={{ marginRight: 4 }}
                   />
                 )}
+                {isReadyType && (
+                  <Ionicons 
+                    name="school" 
+                    size={14} 
+                    color={isActive ? '#fff' : '#9C27B0'} 
+                    style={{ marginRight: 4 }}
+                  />
+                )}
                 <Text
                   style={[
                     styles.categoryChipText,
                     isActive && styles.categoryChipTextActive,
                     isWatchedType && !isActive && styles.watchedChipText,
                     isUnwatchedType && !isActive && styles.unwatchedChipText,
+                    isReadyType && !isActive && styles.readyChipText,
                   ]}
                 >
                   {item.name}
@@ -317,6 +405,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E1E1E',
     borderRadius: 20,
     marginRight: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   categoryChipActive: {
     backgroundColor: '#2196F3',
@@ -449,6 +539,57 @@ const styles = StyleSheet.create({
   },
   unwatchedChipText: {
     color: '#FF9800',
+  },
+  readyChip: {
+    backgroundColor: '#2D1F3D',
+    borderWidth: 1,
+    borderColor: '#9C27B0',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  readyChipActive: {
+    backgroundColor: '#9C27B0',
+    borderColor: '#9C27B0',
+  },
+  readyChipText: {
+    color: '#9C27B0',
+  },
+  readyCheckbox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#2A2A2A',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  readyCheckboxActive: {
+    backgroundColor: '#2D1F3D',
+    borderColor: '#9C27B0',
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#666',
+    marginRight: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: '#9C27B0',
+    borderColor: '#9C27B0',
+  },
+  readyLabel: {
+    color: '#888',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  readyLabelActive: {
+    color: '#9C27B0',
   },
   emptyContainer: {
     flex: 1,

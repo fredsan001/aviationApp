@@ -122,7 +122,7 @@ export const apiService = {
   updateProgress: async (
     accessCode: string,
     videoId: string,
-    data: { watched_count?: number; last_position?: number; is_favorite?: boolean; completed?: boolean }
+    data: { watched_count?: number; last_position?: number; is_favorite?: boolean; completed?: boolean; ready_for_evaluation?: boolean }
   ) => {
     const response = await api.post(`/progress/${accessCode}/${videoId}`, data);
     return response.data;
@@ -183,6 +183,23 @@ export const apiService = {
   },
   getListeningTestHistory: async (accessCode: string) => {
     const response = await api.get(`/listening-test/history/${accessCode}`);
+    return response.data;
+  },
+  
+  // Audio Transcription
+  transcribeAudio: async (audioUri: string) => {
+    const formData = new FormData();
+    formData.append('audio', {
+      uri: audioUri,
+      type: 'audio/wav',
+      name: 'recording.wav',
+    } as any);
+    
+    const response = await api.post('/transcribe-audio', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
     return response.data;
   },
 };
