@@ -264,6 +264,30 @@ backend:
         agent: "testing"
         comment: "GET /api/listening-test/history/{access_code} working perfectly. Returns array of previous listening test results with scores, feedback, and replay counts for the specified access code."
 
+  - task: "Category Order API Route Fix"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "FIXED: PUT /api/categories/order route now defined BEFORE dynamic /{category_id} route, preventing 400 errors. Successfully tested with real category data - API returns 200 with 'Category order updated' message."
+
+  - task: "Aviation Transcription Cleaning Function"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "VERIFIED: clean_aviation_transcription() function implemented and integrated into POST /api/transcribe-audio endpoint. Function cleans aviation terms: 'N1,2,3,4,5' -> 'N12345', '1, 2, 3' -> '123', '3-1 left' -> '31 left'. Transcription endpoint accessible and ready for audio processing."
+
 frontend:
   - task: "Login Screen (Student & Admin)"
     implemented: true
@@ -347,3 +371,5 @@ agent_communication:
     message: "COMPREHENSIVE BACKEND TESTING COMPLETE - ALL APIS WORKING! Fixed critical ATC Evaluate endpoint by replacing incorrect OpenAIChat import with LlmChat. All requested endpoints tested successfully: Categories (GET/POST), Videos (GET/PUT multi-category), ATC Simulation (scenarios/initial-contact/simulate), ATC Evaluate (now working), Access Code Verification, User Progress (now working). 100% success rate on all 11 tests. Ready for production use."
   - agent: "testing"
     message: "LISTENING TEST ENDPOINTS TESTING COMPLETE - ALL WORKING! Successfully tested all 3 new Listening Test endpoints: GET /api/listening-test/random-segment/{access_code} (returns video segments with subtitles), POST /api/listening-test/evaluate/{access_code} (AI-powered evaluation with scores 0-100), GET /api/listening-test/history/{access_code} (retrieves test history). Fixed critical import issue by replacing OpenAIChat with LlmChat. All 14 backend tests now passing with 100% success rate."
+  - agent: "testing"
+    message: "SPECIFIC FIXES TESTING COMPLETE - BOTH FIXES VERIFIED! ✅ Category Order API Fix: PUT /api/categories/order now works correctly (no more 400 errors), route properly defined before dynamic route. ✅ Aviation Transcription Cleaning: clean_aviation_transcription() function implemented and integrated into transcription endpoint, handles aviation callsigns and number sequences correctly. All 5 targeted tests passed successfully."

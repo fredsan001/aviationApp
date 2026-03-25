@@ -280,6 +280,20 @@ async def get_categories():
     categories = await db.categories.find().to_list(100)
     return [Category(**cat) for cat in categories]
 
+class CategoryOrderUpdate(BaseModel):
+    categories: List[dict]  # List of {id, order}
+
+# IMPORTANT: This route MUST be defined BEFORE the dynamic /{category_id} route
+@api_router.put("/categories/order")
+async def update_category_order(data: CategoryOrderUpdate):
+    """Update the order of all categories"""
+    for cat in data.categories:
+        await db.categories.update_one(
+            {"id": cat["id"]},
+            {"$set": {"order": cat["order"]}}
+        )
+    return {"message": "Category order updated"}
+
 @api_router.delete("/categories/{category_id}")
 async def delete_category(category_id: str):
     result = await db.categories.delete_one({"id": category_id})
@@ -309,19 +323,6 @@ async def update_category(category_id: str, data: dict):
     
     updated = await db.categories.find_one({"id": category_id})
     return Category(**updated)
-
-class CategoryOrderUpdate(BaseModel):
-    categories: List[dict]  # List of {id, order}
-
-@api_router.put("/categories/order")
-async def update_category_order(data: CategoryOrderUpdate):
-    """Update the order of all categories"""
-    for cat in data.categories:
-        await db.categories.update_one(
-            {"id": cat["id"]},
-            {"$set": {"order": cat["order"]}}
-        )
-    return {"message": "Category order updated"}
 
 # ------------ Videos ------------
 
@@ -1433,6 +1434,41 @@ async def get_listening_test_history(access_code: str):
     
     return serialize_doc(results)
 
+def clean_aviation_transcription(text: str) -> str:
+    """Clean up Whisper transcription for aviation callsigns and numbers.
+    
+    Fixes common issues like:
+    - "N1,2,3,4,5" -> "N12345"
+    - "1, 2, 3" -> "123"  
+    - Unnecessary commas in numeric sequences
+    """
+    import re
+    
+    # Pattern 1: Remove commas between digits (e.g., "1,2,3,4,5" -> "12345")
+    text = re.sub(r'(\d),\s*(\d)', r'\1\2', text)
+    
+    # Apply multiple times to catch all sequential commas
+    for _ in range(5):
+        text = re.sub(r'(\d),\s*(\d)', r'\1\2', text)
+    
+    # Pattern 2: Fix aircraft callsigns with commas (e.g., "N 1, 2, 3, 4, 5" -> "N12345")
+    # Match letter followed by comma-separated numbers
+    def fix_callsign(match):
+        prefix = match.group(1)
+        numbers = re.sub(r'[,\s]+', '', match.group(2))
+        return prefix + numbers
+    
+    text = re.sub(r'([A-Z])\s*((?:\d[,\s]*)+\d)', fix_callsign, text, flags=re.IGNORECASE)
+    
+    # Pattern 3: Remove spaces around hyphens in common ATC terms
+    text = re.sub(r'\s*-\s*', '-', text)
+    
+    # Pattern 4: Fix runway numbers (e.g., "3-1 left" -> "31 left", "runway 3 1" -> "runway 31")
+    text = re.sub(r'runway\s+(\d)\s*-?\s*(\d)', r'runway \1\2', text, flags=re.IGNORECASE)
+    text = re.sub(r'(\d)\s*-\s*(\d)\s+(left|right|center)', r'\1\2 \3', text, flags=re.IGNORECASE)
+    
+    return text.strip()
+
 @api_router.post("/transcribe-audio")
 async def transcribe_audio(audio: UploadFile = File(...)):
     """Transcribe audio using OpenAI Whisper"""
@@ -1470,15 +1506,19 @@ async def transcribe_audio(audio: UploadFile = File(...)):
                 file=audio_file,
                 model="whisper-1",
                 response_format="json",
-                language="en"  # ATC communications are in English
+                language="en",  # ATC communications are in English
+                prompt="Aviation radio communication. Aircraft callsigns like N12345, N7890AB. Runway numbers like 31L, 27R."
             )
         
-        # Clean up
+        # Clean up temp file
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
         
         # Extract text from response
         transcription_text = response.text if hasattr(response, 'text') else str(response)
+        
+        # Clean up the transcription for aviation terminology
+        transcription_text = clean_aviation_transcription(transcription_text)
         
         logger.info(f"Transcription successful: {transcription_text[:100]}...")
         
