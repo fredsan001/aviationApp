@@ -1349,6 +1349,7 @@ async def get_listening_test_history(access_code: str):
 @api_router.post("/transcribe-audio")
 async def transcribe_audio(audio: UploadFile = File(...)):
     """Transcribe audio using OpenAI Whisper"""
+    temp_path = None
     try:
         api_key = os.getenv("EMERGENT_LLM_KEY")
         if not api_key:
@@ -1364,17 +1365,29 @@ async def transcribe_audio(audio: UploadFile = File(...)):
         from emergentintegrations.llm.openai import OpenAISpeechToText
         
         stt = OpenAISpeechToText(api_key=api_key)
-        transcription = await stt.transcribe(temp_path)
+        
+        # Open the file and transcribe
+        with open(temp_path, "rb") as audio_file:
+            response = await stt.transcribe(
+                file=audio_file,
+                model="whisper-1",
+                response_format="json",
+                language="en"  # ATC communications are in English
+            )
         
         # Clean up
-        os.remove(temp_path)
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
         
-        return {"transcription": transcription}
+        # Extract text from response
+        transcription_text = response.text if hasattr(response, 'text') else str(response)
+        
+        return {"transcription": transcription_text}
         
     except Exception as e:
         logger.error(f"Transcription error: {e}")
         # Clean up on error
-        if os.path.exists(temp_path):
+        if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
         raise HTTPException(status_code=500, detail=str(e))
 

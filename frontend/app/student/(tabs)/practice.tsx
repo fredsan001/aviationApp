@@ -703,14 +703,12 @@ export default function PracticeScreen() {
                       style={[styles.voiceRecordButton, isListeningRecording && styles.voiceRecordButtonActive]}
                       onPress={isListeningRecording ? stopListeningRecording : startListeningRecording}
                     >
-                      <Ionicons 
-                        name={isListeningRecording ? "stop" : "mic"} 
-                        size={40} 
-                        color="#fff" 
-                      />
+                      <Text style={styles.pttButtonText}>
+                        {isListeningRecording ? 'STOP' : 'PTT'}
+                      </Text>
                     </TouchableOpacity>
                     <Text style={styles.voiceInstructions}>
-                      {isListeningRecording ? 'Grabando... Toca para detener' : 'Toca para grabar tu respuesta'}
+                      {isListeningRecording ? 'Grabando... Toca para detener' : 'Push To Talk - Mantén presionado para grabar'}
                     </Text>
                   </>
                 )}
@@ -1366,6 +1364,12 @@ const styles = StyleSheet.create({
   },
   voiceRecordButtonActive: {
     backgroundColor: '#4CAF50',
+  },
+  pttButtonText: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
   voiceInstructions: {
     color: '#888',
