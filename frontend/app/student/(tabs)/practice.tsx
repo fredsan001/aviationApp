@@ -181,7 +181,26 @@ export default function PracticeScreen() {
       });
 
       const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      // Use M4A format which is compatible with Whisper
+      await recording.prepareToRecordAsync({
+        ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        android: {
+          ...Audio.RecordingOptionsPresets.HIGH_QUALITY.android,
+          extension: '.m4a',
+          outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+          audioEncoder: Audio.AndroidAudioEncoder.AAC,
+        },
+        ios: {
+          ...Audio.RecordingOptionsPresets.HIGH_QUALITY.ios,
+          extension: '.m4a',
+          outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
+          audioQuality: Audio.IOSAudioQuality.HIGH,
+        },
+        web: {
+          mimeType: 'audio/webm',
+          bitsPerSecond: 128000,
+        },
+      });
       await recording.startAsync();
       recordingRef.current = recording;
       setIsRecording(true);
@@ -203,6 +222,31 @@ export default function PracticeScreen() {
     } catch (e) {
       console.error('Stop recording error:', e);
       return '';
+    }
+  };
+
+  // Handle recording for ATC simulator - transcribe and put in text field
+  const handleSimulatorRecording = async () => {
+    if (isRecording) {
+      // Stop recording and transcribe
+      const uri = await stopRecording();
+      if (uri) {
+        setIsTransmitting(true);
+        try {
+          const result = await apiService.transcribeAudio(uri);
+          if (result.transcription) {
+            setPilotInput(result.transcription);
+          }
+        } catch (error) {
+          console.error('Transcription error:', error);
+          Alert.alert('Error', 'No se pudo transcribir el audio');
+        } finally {
+          setIsTransmitting(false);
+        }
+      }
+    } else {
+      // Start recording
+      await startRecording();
     }
   };
 
@@ -1035,14 +1079,18 @@ export default function PracticeScreen() {
       <View style={styles.transmissionArea}>
         <TouchableOpacity
           style={[styles.recordButton, isRecording && styles.recordButtonActive]}
-          onPress={isRecording ? stopRecording : startRecording}
+          onPress={handleSimulatorRecording}
           disabled={isTransmitting || isReceiving}
         >
-          <Ionicons 
-            name={isRecording ? "stop" : "mic-outline"} 
-            size={22} 
-            color={isRecording ? '#fff' : '#F44336'} 
-          />
+          {isTransmitting && !isRecording ? (
+            <ActivityIndicator size="small" color="#F44336" />
+          ) : (
+            <Ionicons 
+              name={isRecording ? "stop" : "mic-outline"} 
+              size={22} 
+              color={isRecording ? '#fff' : '#F44336'} 
+            />
+          )}
         </TouchableOpacity>
 
         <View style={styles.inputContainer}>
