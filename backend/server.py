@@ -1355,11 +1355,22 @@ async def transcribe_audio(audio: UploadFile = File(...)):
         if not api_key:
             raise HTTPException(status_code=500, detail="API key not configured")
         
-        # Save audio to temp file
-        temp_path = f"/tmp/audio_{uuid.uuid4()}.wav"
+        # Get the original filename and extension
+        original_filename = audio.filename or "audio.m4a"
+        extension = original_filename.split('.')[-1] if '.' in original_filename else 'm4a'
+        
+        # Ensure extension is supported
+        supported_formats = ['flac', 'm4a', 'mp3', 'mp4', 'mpeg', 'mpga', 'oga', 'ogg', 'wav', 'webm']
+        if extension.lower() not in supported_formats:
+            extension = 'm4a'  # Default to m4a for iOS recordings
+        
+        # Save audio to temp file with correct extension
+        temp_path = f"/tmp/audio_{uuid.uuid4()}.{extension}"
         async with aiofiles.open(temp_path, 'wb') as f:
             content = await audio.read()
             await f.write(content)
+        
+        logger.info(f"Audio saved to {temp_path}, size: {len(content)} bytes")
         
         # Use OpenAI Whisper for transcription
         from emergentintegrations.llm.openai import OpenAISpeechToText
@@ -1381,6 +1392,8 @@ async def transcribe_audio(audio: UploadFile = File(...)):
         
         # Extract text from response
         transcription_text = response.text if hasattr(response, 'text') else str(response)
+        
+        logger.info(f"Transcription successful: {transcription_text[:100]}...")
         
         return {"transcription": transcription_text}
         

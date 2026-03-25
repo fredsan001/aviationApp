@@ -189,10 +189,30 @@ export const apiService = {
   // Audio Transcription
   transcribeAudio: async (audioUri: string) => {
     const formData = new FormData();
+    
+    // Determine the file extension from the URI
+    const uriParts = audioUri.split('.');
+    const extension = uriParts.length > 1 ? uriParts[uriParts.length - 1].toLowerCase() : 'm4a';
+    
+    // Map extension to MIME type
+    const mimeTypes: Record<string, string> = {
+      'm4a': 'audio/m4a',
+      'mp3': 'audio/mpeg',
+      'mp4': 'audio/mp4',
+      'wav': 'audio/wav',
+      'webm': 'audio/webm',
+      'ogg': 'audio/ogg',
+      'flac': 'audio/flac',
+      'caf': 'audio/x-caf',
+    };
+    
+    const mimeType = mimeTypes[extension] || 'audio/m4a';
+    const fileName = `recording.${extension}`;
+    
     formData.append('audio', {
       uri: audioUri,
-      type: 'audio/wav',
-      name: 'recording.wav',
+      type: mimeType,
+      name: fileName,
     } as any);
     
     const response = await api.post('/transcribe-audio', formData, {
