@@ -1117,8 +1117,12 @@ async def evaluate_pilot_transmission(request: EvaluationRequest):
         {f"Expected context: {request.expected_context}" if request.expected_context else ""}
         """
         
+        # Use session_id for evaluation
+        eval_session_id = f"eval_{datetime.utcnow().timestamp()}"
+        
         chat = LlmChat(
             api_key=api_key,
+            session_id=eval_session_id,
             system_message=EVALUATION_SYSTEM_PROMPT
         ).with_model("openai", "gpt-4.1")
         

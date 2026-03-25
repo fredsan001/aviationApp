@@ -34,23 +34,30 @@ export default function StudentVideos() {
 
   const fetchData = async () => {
     try {
-      // Special handling for "Vistos" category
+      // Fetch all categories first
+      const categoriesData = await apiService.getCategories();
+      setCategories(categoriesData);
+      
+      // Also fetch watched videos to mark them
+      let watchedIds = new Set<string>();
+      if (accessCode) {
+        const watched = await apiService.getWatchedVideos(accessCode);
+        watchedIds = new Set(watched.map((v: VideoWithProgress) => v.id));
+        setWatchedVideoIds(watchedIds);
+      }
+      
+      // Handle special categories
       if (selectedCategory === '__watched__') {
         const watchedVideos = await apiService.getWatchedVideos(accessCode);
         setVideos(watchedVideos);
+      } else if (selectedCategory === '__unwatched__') {
+        // Fetch all videos and filter out watched ones
+        const allVideos = await apiService.getVideos();
+        const unwatchedVideos = allVideos.filter((v: Video) => !v.is_processing && !watchedIds.has(v.id));
+        setVideos(unwatchedVideos);
       } else {
-        const [videosData, categoriesData] = await Promise.all([
-          apiService.getVideos(selectedCategory || undefined),
-          apiService.getCategories(),
-        ]);
+        const videosData = await apiService.getVideos(selectedCategory || undefined);
         setVideos(videosData.filter((v: Video) => !v.is_processing));
-        setCategories(categoriesData);
-      }
-      
-      // Also fetch watched videos to mark them
-      if (accessCode) {
-        const watched = await apiService.getWatchedVideos(accessCode);
-        setWatchedVideoIds(new Set(watched.map((v: VideoWithProgress) => v.id)));
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -128,10 +135,11 @@ export default function StudentVideos() {
     );
   };
 
-  // Build categories list with special "Vistos" category
+  // Build categories list with special categories
   const allCategories = [
     { id: 'all', name: 'Todos' },
     { id: '__watched__', name: 'Vistos', icon: 'eye' },
+    { id: '__unwatched__', name: 'No Vistos', icon: 'eye-off' },
     ...categories
   ];
 
@@ -167,27 +175,32 @@ export default function StudentVideos() {
           renderItem={({ item }) => {
             const isActive = (item.id === 'all' && !selectedCategory) || 
                             selectedCategory === item.id ||
-                            (item.id !== 'all' && item.id !== '__watched__' && selectedCategory === item.name);
+                            (item.id !== 'all' && item.id !== '__watched__' && item.id !== '__unwatched__' && selectedCategory === item.name);
+            
+            const isWatchedType = item.id === '__watched__';
+            const isUnwatchedType = item.id === '__unwatched__';
             
             return (
               <TouchableOpacity
                 style={[
                   styles.categoryChip,
                   isActive && styles.categoryChipActive,
-                  item.id === '__watched__' && styles.watchedChip,
-                  item.id === '__watched__' && isActive && styles.watchedChipActive,
+                  isWatchedType && styles.watchedChip,
+                  isWatchedType && isActive && styles.watchedChipActive,
+                  isUnwatchedType && styles.unwatchedChip,
+                  isUnwatchedType && isActive && styles.unwatchedChipActive,
                 ]}
                 onPress={() => {
                   if (item.id === 'all') {
                     setSelectedCategory(null);
-                  } else if (item.id === '__watched__') {
-                    setSelectedCategory('__watched__');
+                  } else if (item.id === '__watched__' || item.id === '__unwatched__') {
+                    setSelectedCategory(item.id);
                   } else {
                     setSelectedCategory(item.name);
                   }
                 }}
               >
-                {item.id === '__watched__' && (
+                {isWatchedType && (
                   <Ionicons 
                     name="eye" 
                     size={14} 
@@ -195,11 +208,20 @@ export default function StudentVideos() {
                     style={{ marginRight: 4 }}
                   />
                 )}
+                {isUnwatchedType && (
+                  <Ionicons 
+                    name="eye-off" 
+                    size={14} 
+                    color={isActive ? '#fff' : '#FF9800'} 
+                    style={{ marginRight: 4 }}
+                  />
+                )}
                 <Text
                   style={[
                     styles.categoryChipText,
                     isActive && styles.categoryChipTextActive,
-                    item.id === '__watched__' && !isActive && styles.watchedChipText,
+                    isWatchedType && !isActive && styles.watchedChipText,
+                    isUnwatchedType && !isActive && styles.unwatchedChipText,
                   ]}
                 >
                   {item.name}
@@ -415,6 +437,18 @@ const styles = StyleSheet.create({
   },
   watchedChipText: {
     color: '#4CAF50',
+  },
+  unwatchedChip: {
+    backgroundColor: '#3D2F1F',
+    borderWidth: 1,
+    borderColor: '#FF9800',
+  },
+  unwatchedChipActive: {
+    backgroundColor: '#FF9800',
+    borderColor: '#FF9800',
+  },
+  unwatchedChipText: {
+    color: '#FF9800',
   },
   emptyContainer: {
     flex: 1,
