@@ -167,8 +167,8 @@ export const apiService = {
   },
 
   // Listening Test
-  getRandomListeningSegment: async (accessCode: string) => {
-    const response = await api.get(`/listening-test/random-segment/${accessCode}`);
+  getRandomListeningSegment: async (accessCode: string, level: number = 1) => {
+    const response = await api.get(`/listening-test/random-segment/${accessCode}?level=${level}`);
     return response.data;
   },
   evaluateListeningTest: async (accessCode: string, data: {

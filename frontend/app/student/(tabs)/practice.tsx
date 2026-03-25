@@ -105,6 +105,7 @@ export default function PracticeScreen() {
   const [responseMode, setResponseMode] = useState<'text' | 'voice'>('text');
   const [isListeningRecording, setIsListeningRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [selectedLevel, setSelectedLevel] = useState<number>(1);
   const listeningRecordingRef = useRef<Audio.Recording | null>(null);
   
   const { accessCode } = useAppStore();
@@ -371,7 +372,7 @@ export default function PracticeScreen() {
 
     setLoading(true);
     try {
-      const segment = await apiService.getRandomListeningSegment(accessCode);
+      const segment = await apiService.getRandomListeningSegment(accessCode, selectedLevel);
       setListeningSegment(segment);
       setReplayCount(0);
       setUserResponse('');
@@ -655,10 +656,46 @@ export default function PracticeScreen() {
         </View>
       ) : listeningSegment ? (
         <ScrollView style={styles.listeningContent}>
+          {/* Level Selector */}
+          <View style={styles.levelSelectorContainer}>
+            <Text style={styles.levelLabel}>Nivel de dificultad:</Text>
+            <View style={styles.levelSelector}>
+              {[1, 2, 3, 4].map((level) => (
+                <TouchableOpacity
+                  key={level}
+                  style={[
+                    styles.levelButton,
+                    selectedLevel === level && styles.levelButtonActive
+                  ]}
+                  onPress={() => {
+                    setSelectedLevel(level);
+                    loadRandomSegment();
+                  }}
+                >
+                  <Text style={[
+                    styles.levelButtonText,
+                    selectedLevel === level && styles.levelButtonTextActive
+                  ]}>
+                    {level}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={styles.levelDescription}>
+              {selectedLevel === 1 && '0-5 seg (Fácil)'}
+              {selectedLevel === 2 && '5-10 seg (Intermedio)'}
+              {selectedLevel === 3 && '10-20 seg (Avanzado)'}
+              {selectedLevel === 4 && '20+ seg (Experto)'}
+            </Text>
+          </View>
+
           {/* Video Info */}
           <View style={styles.segmentInfo}>
             <Ionicons name="videocam" size={20} color="#888" />
             <Text style={styles.segmentTitle}>{listeningSegment.video_title}</Text>
+            <View style={styles.durationBadgeSmall}>
+              <Text style={styles.durationTextSmall}>{listeningSegment.duration}s</Text>
+            </View>
           </View>
 
           {/* Audio Player */}
@@ -1318,6 +1355,63 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 13,
     marginTop: 16,
+  },
+  levelSelectorContainer: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  levelLabel: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  levelSelector: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  levelButton: {
+    flex: 1,
+    marginHorizontal: 4,
+    paddingVertical: 12,
+    backgroundColor: '#2A2A2A',
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  levelButtonActive: {
+    backgroundColor: '#2196F320',
+    borderColor: '#2196F3',
+  },
+  levelButtonText: {
+    color: '#888',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  levelButtonTextActive: {
+    color: '#2196F3',
+  },
+  levelDescription: {
+    color: '#888',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  durationBadgeSmall: {
+    backgroundColor: '#2196F320',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginLeft: 'auto',
+  },
+  durationTextSmall: {
+    color: '#2196F3',
+    fontSize: 12,
+    fontWeight: '600',
   },
   responseSection: {
     marginBottom: 20,

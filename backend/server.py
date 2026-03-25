@@ -1189,9 +1189,30 @@ class ListeningTestSubmission(BaseModel):
     replay_count: int
 
 @api_router.get("/listening-test/random-segment/{access_code}")
-async def get_random_listening_segment(access_code: str):
-    """Get a random audio segment from videos marked as ready for evaluation"""
+async def get_random_listening_segment(access_code: str, level: int = 1):
+    """Get a random audio segment from videos marked as ready for evaluation
+    
+    Levels:
+    - Level 1: Shortest segments (0-5 seconds)
+    - Level 2: Short segments (5-10 seconds)
+    - Level 3: Medium segments (10-20 seconds)
+    - Level 4: Long segments (20+ seconds)
+    """
     import random
+    
+    # Define duration ranges for each level (in seconds)
+    level_ranges = {
+        1: (0, 5),
+        2: (5, 10),
+        3: (10, 20),
+        4: (20, 999)  # 20+ seconds
+    }
+    
+    # Validate level
+    if level not in level_ranges:
+        level = 1
+    
+    min_duration, max_duration = level_ranges[level]
     
     # Get videos that the student marked as ready for evaluation
     ready_progress = await db.user_progress.find({
@@ -1219,28 +1240,54 @@ async def get_random_listening_segment(access_code: str):
     if not videos_with_subtitles:
         raise HTTPException(status_code=404, detail="No hay segmentos de audio disponibles")
     
-    # Collect all subtitles from all ready videos with their video info
-    all_segments = []
+    # Collect all subtitles that match the level's duration range
+    matching_segments = []
     for video in videos_with_subtitles:
         for subtitle in video['subtitles']:
             duration = subtitle.get('end_time', 0) - subtitle.get('start_time', 0)
-            all_segments.append({
-                'video': video,
-                'subtitle': subtitle,
-                'duration': duration
-            })
+            if min_duration <= duration < max_duration:
+                matching_segments.append({
+                    'video': video,
+                    'subtitle': subtitle,
+                    'duration': duration
+                })
     
-    if not all_segments:
-        raise HTTPException(status_code=404, detail="No hay segmentos de audio disponibles")
+    # If no segments match the level, try to find closest ones
+    if not matching_segments:
+        # Collect all segments and sort by duration
+        all_segments = []
+        for video in videos_with_subtitles:
+            for subtitle in video['subtitles']:
+                duration = subtitle.get('end_time', 0) - subtitle.get('start_time', 0)
+                all_segments.append({
+                    'video': video,
+                    'subtitle': subtitle,
+                    'duration': duration
+                })
+        
+        if not all_segments:
+            raise HTTPException(status_code=404, detail="No hay segmentos de audio disponibles")
+        
+        # Sort by duration and select based on level
+        all_segments.sort(key=lambda x: x['duration'])
+        
+        # Divide into quartiles based on level
+        total = len(all_segments)
+        if level == 1:
+            matching_segments = all_segments[:max(1, total // 4)]
+        elif level == 2:
+            matching_segments = all_segments[total // 4:total // 2]
+        elif level == 3:
+            matching_segments = all_segments[total // 2:3 * total // 4]
+        else:  # level 4
+            matching_segments = all_segments[3 * total // 4:]
+        
+        # Fallback if still empty
+        if not matching_segments:
+            matching_segments = all_segments
     
-    # Sort by duration (shortest first) and pick from the shortest ones
-    all_segments.sort(key=lambda x: x['duration'])
-    
-    # Take from the shortest 50% of segments to prioritize shorter ones
-    short_segments = all_segments[:max(1, len(all_segments) // 2)]
-    
-    # Select random segment from the short ones
-    selected = random.choice(short_segments)
+    # Select random segment from matching ones
+    selected = random.choice(matching_segments)
     video = selected['video']
     subtitle = selected['subtitle']
     
@@ -1250,7 +1297,8 @@ async def get_random_listening_segment(access_code: str):
         "subtitle_id": subtitle.get('id', str(uuid.uuid4())),
         "start_time": subtitle['start_time'],
         "end_time": subtitle['end_time'],
-        "duration": selected['duration'],
+        "duration": round(selected['duration'], 1),
+        "level": level,
         "text": subtitle['text'],
         "stream_url": f"/api/videos/{video['id']}/stream"
     }
