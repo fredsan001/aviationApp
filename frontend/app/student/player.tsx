@@ -240,9 +240,13 @@ export default function VideoPlayer() {
       setDuration(status.durationMillis / 1000);
     }
 
-    // Mark as watched when video finishes
+    // Mark as watched and loop when video finishes
     if (status.didJustFinish) {
       markAsWatched();
+      // Auto-loop: restart the video
+      if (expoVideoRef.current) {
+        expoVideoRef.current.replayAsync();
+      }
     }
   };
 
@@ -260,10 +264,14 @@ export default function VideoPlayer() {
     }
   };
 
-  // Handle web video ended
+  // Handle web video ended - auto loop
   const handleWebVideoEnded = () => {
-    setPlaying(false);
     markAsWatched();
+    // Auto-loop: restart the video
+    if (webVideoRef.current) {
+      webVideoRef.current.currentTime = 0;
+      webVideoRef.current.play();
+    }
   };
 
   const togglePlay = async () => {
@@ -528,23 +536,6 @@ export default function VideoPlayer() {
           </View>
         </View>
 
-        {/* Subtitle Language Controls */}
-        {video && video.subtitles && video.subtitles.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Idioma</Text>
-            <View style={styles.languageRow}>
-              <TouchableOpacity
-                style={[styles.langBtn, subtitleLanguage === 'en' && styles.langBtnActive]}
-                onPress={() => setSubtitleLanguage('en')}
-              >
-                <Text style={[styles.langText, subtitleLanguage === 'en' && styles.langTextActive]}>
-                  English
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
         {/* Segments - Tap to repeat */}
         {video.subtitles.length > 0 && (
           <View style={styles.section}>
@@ -808,10 +799,10 @@ const styles = StyleSheet.create({
   },
   subtitleChip: {
     backgroundColor: '#1E1E1E',
-    padding: 12,
-    borderRadius: 8,
-    marginRight: 10,
-    width: 160,
+    padding: 14,
+    borderRadius: 10,
+    marginRight: 12,
+    width: 200,
   },
   subtitleChipCurrent: {
     backgroundColor: '#2A2A2A',
@@ -827,17 +818,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   subtitleChipTime: {
     color: '#4CAF50',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
   },
   subtitleChipText: {
     color: '#fff',
-    fontSize: 15,
-    lineHeight: 20,
+    fontSize: 18,
+    lineHeight: 24,
     fontWeight: '500',
   },
 });
