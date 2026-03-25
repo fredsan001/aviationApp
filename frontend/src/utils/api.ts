@@ -22,8 +22,16 @@ export const apiService = {
     const response = await api.get('/categories');
     return response.data;
   },
-  createCategory: async (data: { name: string; description?: string }) => {
+  createCategory: async (data: { name: string; description?: string; order?: number }) => {
     const response = await api.post('/categories', data);
+    return response.data;
+  },
+  updateCategory: async (id: string, data: { name?: string; description?: string }) => {
+    const response = await api.put(`/categories/${id}`, data);
+    return response.data;
+  },
+  updateCategoryOrder: async (categories: { id: string; order: number }[]) => {
+    const response = await api.put('/categories/order', { categories });
     return response.data;
   },
   deleteCategory: async (id: string) => {

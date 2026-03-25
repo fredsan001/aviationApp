@@ -287,6 +287,42 @@ async def delete_category(category_id: str):
         raise HTTPException(status_code=404, detail="Category not found")
     return {"message": "Category deleted"}
 
+@api_router.put("/categories/{category_id}")
+async def update_category(category_id: str, data: dict):
+    """Update a category's name and description"""
+    update_data = {}
+    if "name" in data:
+        update_data["name"] = data["name"]
+    if "description" in data:
+        update_data["description"] = data["description"]
+    
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No data to update")
+    
+    result = await db.categories.update_one(
+        {"id": category_id},
+        {"$set": update_data}
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Category not found")
+    
+    updated = await db.categories.find_one({"id": category_id})
+    return Category(**updated)
+
+class CategoryOrderUpdate(BaseModel):
+    categories: List[dict]  # List of {id, order}
+
+@api_router.put("/categories/order")
+async def update_category_order(data: CategoryOrderUpdate):
+    """Update the order of all categories"""
+    for cat in data.categories:
+        await db.categories.update_one(
+            {"id": cat["id"]},
+            {"$set": {"order": cat["order"]}}
+        )
+    return {"message": "Category order updated"}
+
 # ------------ Videos ------------
 
 @api_router.post("/videos")
