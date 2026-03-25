@@ -49,16 +49,17 @@ export default function HomeScreen() {
   };
 
   const handleAdminLogin = async (password?: string) => {
-    const pwd = password || adminPassword;
+    // Ensure pwd is a string - handle both direct call and event call
+    const pwd = typeof password === 'string' ? password : adminPassword;
     Keyboard.dismiss();
-    if (!pwd.trim()) {
+    if (!pwd || !pwd.trim()) {
       Alert.alert('Error', 'Por favor ingresa la contraseña de administrador');
       return;
     }
     
     setLoading(true);
     try {
-      await apiService.adminLogin(pwd);
+      await apiService.adminLogin(pwd.trim());
       setAdmin(true);
       router.replace('/admin');
     } catch (error: any) {
@@ -186,7 +187,7 @@ export default function HomeScreen() {
 
                 <TouchableOpacity
                   style={[styles.button, styles.adminButton]}
-                  onPress={handleAdminLogin}
+                  onPress={() => handleAdminLogin()}
                   disabled={loading}
                   activeOpacity={0.8}
                 >
