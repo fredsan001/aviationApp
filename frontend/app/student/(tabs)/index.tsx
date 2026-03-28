@@ -21,10 +21,13 @@ interface VideoWithProgress extends Video {
   completed?: boolean;
   last_position?: number;
   ready_for_evaluation?: boolean;
+  path_order?: number;
+  is_path_exclusive?: boolean;
 }
 
 export default function StudentVideos() {
   const [videos, setVideos] = useState<VideoWithProgress[]>([]);
+  const [pathVideos, setPathVideos] = useState<VideoWithProgress[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [watchedVideoIds, setWatchedVideoIds] = useState<Set<string>>(new Set());
@@ -50,14 +53,12 @@ export default function StudentVideos() {
 
   // Displayed videos based on view mode
   const displayedVideos = viewMode === 'path' 
-    ? [...videos].sort((a, b) => {
-        // Sort by category order first, then by video order
-        const catA = categories.findIndex(c => c.name === a.category);
-        const catB = categories.findIndex(c => c.name === b.category);
-        if (catA !== catB) return catA - catB;
-        return (a.order || 0) - (b.order || 0);
-      })
-    : videos;
+    ? pathVideos
+    : videos.filter(v => {
+        // In "All" mode, hide videos that are path_exclusive
+        const pathItem = pathVideos.find(pv => pv.id === v.id);
+        return !pathItem?.is_path_exclusive;
+      });
 
   const fetchData = async () => {
     try {
@@ -80,6 +81,15 @@ export default function StudentVideos() {
           progressData.set(p.video_id, p);
         });
         setProgressMap(progressData);
+        
+        // Fetch learning path videos
+        try {
+          const pathData = await apiService.getLearningPathVideos(accessCode);
+          setPathVideos(pathData);
+        } catch (e) {
+          console.log('No learning path configured');
+          setPathVideos([]);
+        }
       }
       
       // Handle special categories
@@ -167,7 +177,7 @@ export default function StudentVideos() {
     }
   };
 
-  const renderVideo = ({ item }: { item: VideoWithProgress }) => {
+  const renderVideo = ({ item, index }: { item: VideoWithProgress; index: number }) => {
     const thumbnailUrl = apiService.getVideoThumbnailUrl(item.id);
     const isWatched = watchedVideoIds.has(item.id) || item.watched_count && item.watched_count > 0;
     const isReady = item.ready_for_evaluation || progressMap.get(item.id)?.ready_for_evaluation;
@@ -194,6 +204,11 @@ export default function StudentVideos() {
             <View style={styles.watchedBadge}>
               <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
               <Text style={styles.watchedText}>Visto</Text>
+            </View>
+          )}
+          {viewMode === 'path' && (
+            <View style={styles.pathOrderBadge}>
+              <Text style={styles.pathOrderText}>{index + 1}</Text>
             </View>
           )}
         </View>
@@ -588,6 +603,22 @@ const styles = StyleSheet.create({
   watchCountText: {
     color: '#2196F3',
     fontSize: 12,
+  },
+  pathOrderBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#E91E63',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pathOrderText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
   },
   watchedChip: {
     backgroundColor: '#1E3D1F',

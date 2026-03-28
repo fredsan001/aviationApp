@@ -244,6 +244,20 @@ export const apiService = {
     const response = await api.get('/settings/intro-video');
     return response.data;
   },
+
+  // Learning Path
+  getLearningPath: async () => {
+    const response = await api.get('/learning-path');
+    return response.data;
+  },
+  updateLearningPath: async (items: { video_id: string; order: number; is_path_exclusive: boolean }[]) => {
+    const response = await api.put('/learning-path', { items });
+    return response.data;
+  },
+  getLearningPathVideos: async (accessCode: string) => {
+    const response = await api.get(`/learning-path/videos/${accessCode}`);
+    return response.data;
+  },
 };
 
 export default api;

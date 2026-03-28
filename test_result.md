@@ -288,6 +288,42 @@ backend:
         agent: "testing"
         comment: "VERIFIED: clean_aviation_transcription() function implemented and integrated into POST /api/transcribe-audio endpoint. Function cleans aviation terms: 'N1,2,3,4,5' -> 'N12345', '1, 2, 3' -> '123', '3-1 left' -> '31 left'. Transcription endpoint accessible and ready for audio processing."
 
+  - task: "Learning Path Get API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "GET /api/learning-path working perfectly. Returns empty array initially, then returns learning path items with video details after updates. Properly sorted by order field."
+
+  - task: "Learning Path Update API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "PUT /api/learning-path working correctly. Successfully updates learning path with video items including video_id, order, and is_path_exclusive fields. Returns success message with items count."
+
+  - task: "Learning Path Videos with Progress API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "GET /api/learning-path/videos/{access_code} working perfectly. Returns learning path videos with student progress data including watched_count, completed, ready_for_evaluation, path_order, and is_path_exclusive fields."
+
 frontend:
   - task: "Login Screen (Student & Admin)"
     implemented: true
@@ -357,7 +393,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "All backend APIs tested and working including new Listening Test endpoints"
+    - "All backend APIs tested and working including new Learning Path endpoints"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -373,3 +409,5 @@ agent_communication:
     message: "LISTENING TEST ENDPOINTS TESTING COMPLETE - ALL WORKING! Successfully tested all 3 new Listening Test endpoints: GET /api/listening-test/random-segment/{access_code} (returns video segments with subtitles), POST /api/listening-test/evaluate/{access_code} (AI-powered evaluation with scores 0-100), GET /api/listening-test/history/{access_code} (retrieves test history). Fixed critical import issue by replacing OpenAIChat with LlmChat. All 14 backend tests now passing with 100% success rate."
   - agent: "testing"
     message: "SPECIFIC FIXES TESTING COMPLETE - BOTH FIXES VERIFIED! ✅ Category Order API Fix: PUT /api/categories/order now works correctly (no more 400 errors), route properly defined before dynamic route. ✅ Aviation Transcription Cleaning: clean_aviation_transcription() function implemented and integrated into transcription endpoint, handles aviation callsigns and number sequences correctly. All 5 targeted tests passed successfully."
+  - agent: "testing"
+    message: "LEARNING PATH API TESTING COMPLETE - ALL 3 ENDPOINTS WORKING PERFECTLY! ✅ GET /api/learning-path: Returns empty array initially, then shows learning path items with video details. ✅ PUT /api/learning-path: Successfully updates learning path with video items (video_id, order, is_path_exclusive). ✅ GET /api/learning-path/videos/{access_code}: Returns learning path videos with student progress data. All tests passed with 100% success rate using correct URL (https://skycomm-app.preview.emergentagent.com). Note: Review request mentioned different URL (aeroenglish-atc-app-5xdkp) but actual app runs on skycomm-app subdomain."

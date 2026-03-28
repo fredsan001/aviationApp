@@ -1080,11 +1080,11 @@ async def get_initial_contact(scenario_id: str):
     initial_messages = {
         "startup": f"{scenario['atc_facility']}, {scenario['frequency']}, ATIS information Alpha current.",
         "takeoff": f"N12345, {scenario['atc_facility']}, runway 25L, cleared for takeoff, wind 270 at 8.",
-        "cruise": f"N12345, Oakland Center, radar contact, 8,500, squawk 4521.",
-        "approach": f"N12345, NorCal Approach, squawk 0425, report airport in sight.",
-        "pattern": f"Palo Alto Traffic, Cessna 12345, 5 miles south, inbound for landing runway 31.",
-        "emergency_engine": f"All aircraft, maintain current altitude and heading. Emergency aircraft has priority.",
-        "emergency_lost": f"Aircraft calling, say again callsign and souls on board."
+        "cruise": "N12345, Oakland Center, radar contact, 8,500, squawk 4521.",
+        "approach": "N12345, NorCal Approach, squawk 0425, report airport in sight.",
+        "pattern": "Palo Alto Traffic, Cessna 12345, 5 miles south, inbound for landing runway 31.",
+        "emergency_engine": "All aircraft, maintain current altitude and heading. Emergency aircraft has priority.",
+        "emergency_lost": "Aircraft calling, say again callsign and souls on board."
     }
     
     initial_msg = initial_messages.get(scenario_id, f"{scenario['atc_facility']}, standby.")
@@ -1573,6 +1573,76 @@ async def get_intro_video():
         return {"video": None}
     
     return {"video": serialize_doc(video)}
+
+# ============== Learning Path ==============
+
+class LearningPathItem(BaseModel):
+    video_id: str
+    order: int
+    is_path_exclusive: bool = False  # True = only visible in Path mode, False = visible everywhere
+
+class LearningPathUpdate(BaseModel):
+    items: List[LearningPathItem]
+
+@api_router.get("/learning-path")
+async def get_learning_path():
+    """Get the learning path configuration"""
+    path = await db.learning_path.find().sort("order", 1).to_list(100)
+    
+    # Get video details for each path item
+    result = []
+    for item in path:
+        video = await db.videos.find_one({"id": item["video_id"]})
+        if video:
+            result.append({
+                "video_id": item["video_id"],
+                "order": item["order"],
+                "is_path_exclusive": item.get("is_path_exclusive", False),
+                "video": serialize_doc(video)
+            })
+    
+    return result
+
+@api_router.put("/learning-path")
+async def update_learning_path(data: LearningPathUpdate):
+    """Update the entire learning path (admin only)"""
+    # Clear existing path
+    await db.learning_path.delete_many({})
+    
+    # Insert new path items
+    for item in data.items:
+        await db.learning_path.insert_one({
+            "video_id": item.video_id,
+            "order": item.order,
+            "is_path_exclusive": item.is_path_exclusive
+        })
+    
+    return {"message": "Learning path updated", "items_count": len(data.items)}
+
+@api_router.get("/learning-path/videos/{access_code}")
+async def get_learning_path_videos(access_code: str):
+    """Get learning path videos with student progress"""
+    # Get the learning path
+    path = await db.learning_path.find().sort("order", 1).to_list(100)
+    
+    # Get student progress
+    progress_list = await db.user_progress.find({"access_code": access_code}).to_list(1000)
+    progress_map = {p["video_id"]: p for p in progress_list}
+    
+    result = []
+    for item in path:
+        video = await db.videos.find_one({"id": item["video_id"]})
+        if video:
+            video_data = serialize_doc(video)
+            video_progress = progress_map.get(item["video_id"], {})
+            video_data["watched_count"] = video_progress.get("watched_count", 0)
+            video_data["completed"] = video_progress.get("completed", False)
+            video_data["ready_for_evaluation"] = video_progress.get("ready_for_evaluation", False)
+            video_data["path_order"] = item["order"]
+            video_data["is_path_exclusive"] = item.get("is_path_exclusive", False)
+            result.append(video_data)
+    
+    return result
 
 # Include the router in the main app
 app.include_router(api_router)

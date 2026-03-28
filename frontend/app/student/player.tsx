@@ -120,6 +120,10 @@ export default function VideoPlayer() {
   const [subtitleLanguage, setSubtitleLanguage] = useState<'en' | 'es'>('en');
   const [translating, setTranslating] = useState(false);
   
+  // New controls
+  const [showSubtitles, setShowSubtitles] = useState(true);
+  const [autoRepeat, setAutoRepeat] = useState(true);
+  
   const { accessCode } = useAppStore();
   const isWeb = Platform.OS === 'web';
 
@@ -243,8 +247,8 @@ export default function VideoPlayer() {
     // Mark as watched and loop when video finishes
     if (status.didJustFinish) {
       markAsWatched();
-      // Auto-loop: restart the video
-      if (expoVideoRef.current) {
+      // Auto-loop: restart the video only if autoRepeat is enabled
+      if (autoRepeat && expoVideoRef.current) {
         expoVideoRef.current.replayAsync();
       }
     }
@@ -267,8 +271,8 @@ export default function VideoPlayer() {
   // Handle web video ended - auto loop
   const handleWebVideoEnded = () => {
     markAsWatched();
-    // Auto-loop: restart the video
-    if (webVideoRef.current) {
+    // Auto-loop: restart the video only if autoRepeat is enabled
+    if (autoRepeat && webVideoRef.current) {
       webVideoRef.current.currentTime = 0;
       webVideoRef.current.play();
     }
@@ -470,7 +474,7 @@ export default function VideoPlayer() {
           </View>
           
           {/* Subtitle Display */}
-          {currentSubtitle && (
+          {showSubtitles && currentSubtitle && (
             <View style={[styles.subtitleContainer, selectedSegment && styles.subtitleLooping]}>
               <Text style={styles.subtitleText}>{getCurrentSubtitleText()}</Text>
             </View>
@@ -533,6 +537,40 @@ export default function VideoPlayer() {
                 </Text>
               </TouchableOpacity>
             ))}
+          </View>
+        </View>
+
+        {/* Video Options - Subtitles & Auto Repeat */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Opciones</Text>
+          <View style={styles.optionsRow}>
+            <TouchableOpacity
+              style={[styles.optionBtn, showSubtitles && styles.optionBtnActive]}
+              onPress={() => setShowSubtitles(!showSubtitles)}
+            >
+              <Ionicons 
+                name={showSubtitles ? "text" : "text-outline"} 
+                size={20} 
+                color={showSubtitles ? "#fff" : "#888"} 
+              />
+              <Text style={[styles.optionText, showSubtitles && styles.optionTextActive]}>
+                Subtítulos
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.optionBtn, autoRepeat && styles.optionBtnActive]}
+              onPress={() => setAutoRepeat(!autoRepeat)}
+            >
+              <Ionicons 
+                name="repeat" 
+                size={20} 
+                color={autoRepeat ? "#fff" : "#888"} 
+              />
+              <Text style={[styles.optionText, autoRepeat && styles.optionTextActive]}>
+                Repetir
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -753,6 +791,31 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   speedTextActive: {
+    color: '#fff',
+  },
+  optionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  optionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    backgroundColor: '#1E1E1E',
+    borderRadius: 8,
+    gap: 8,
+  },
+  optionBtnActive: {
+    backgroundColor: '#2196F3',
+  },
+  optionText: {
+    color: '#888',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  optionTextActive: {
     color: '#fff',
   },
   languageRow: {

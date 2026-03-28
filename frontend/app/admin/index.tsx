@@ -31,6 +31,13 @@ export default function AdminDashboard() {
       color: '#2196F3',
     },
     {
+      icon: 'map',
+      title: 'Learning Path',
+      description: 'Configure the student learning path',
+      route: '/admin/learning-path',
+      color: '#E91E63',
+    },
+    {
       icon: 'key',
       title: 'Access Codes',
       description: 'Create and manage client access codes',
