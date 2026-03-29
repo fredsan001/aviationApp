@@ -285,6 +285,26 @@ export const apiService = {
     const response = await api.get(`/admin/students/${accessCode}/progress`);
     return response.data;
   },
+  
+  // Access Code Details & Profile
+  getAccessCodeDetails: async (codeId: string) => {
+    const response = await api.get(`/access-codes/${codeId}/details`);
+    return response.data;
+  },
+  updateStudentProfile: async (codeId: string, profile: { email?: string; phone?: string; notes?: string; full_name?: string }) => {
+    const response = await api.put(`/access-codes/${codeId}/profile`, profile);
+    return response.data;
+  },
+  
+  // Login History
+  getLoginHistory: async (limit?: number) => {
+    const response = await api.get(`/admin/login-history${limit ? `?limit=${limit}` : ''}`);
+    return response.data;
+  },
+  getFailedAttempts: async (limit?: number) => {
+    const response = await api.get(`/admin/failed-attempts${limit ? `?limit=${limit}` : ''}`);
+    return response.data;
+  },
 };
 
 export default api;

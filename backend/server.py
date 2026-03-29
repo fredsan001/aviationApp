@@ -825,12 +825,28 @@ async def get_access_codes():
 @api_router.post("/access-codes/verify")
 async def verify_access_code(verify: AccessCodeVerify):
     code = await db.access_codes.find_one({"code": verify.code, "is_active": True})
+    
+    # Log login attempt
+    login_record = {
+        "id": str(uuid.uuid4()),
+        "access_code": verify.code,
+        "device_id": verify.device_id,
+        "timestamp": datetime.utcnow(),
+        "success": False,
+        "failure_reason": None,
+        "ip_address": None,  # Could be added via request headers
+    }
+    
     if not code:
+        login_record["failure_reason"] = "Invalid or inactive access code"
+        await db.login_history.insert_one(login_record)
         raise HTTPException(status_code=401, detail="Invalid or inactive access code")
     
     # Check expiration
     if code.get('expires_at'):
         if datetime.utcnow() > code['expires_at']:
+            login_record["failure_reason"] = "Access code expired"
+            await db.login_history.insert_one(login_record)
             raise HTTPException(status_code=401, detail="Access code has expired")
     
     # Single device enforcement
@@ -838,7 +854,9 @@ async def verify_access_code(verify: AccessCodeVerify):
         registered_device = code.get('registered_device_id')
         
         if registered_device and registered_device != verify.device_id:
-            # Different device trying to login
+            # Different device trying to login - log as failed attempt
+            login_record["failure_reason"] = f"Device blocked - registered: {registered_device[:8]}..., attempted: {verify.device_id[:8]}..."
+            await db.login_history.insert_one(login_record)
             raise HTTPException(
                 status_code=403, 
                 detail="DEVICE_BLOCKED: Este código ya está registrado en otro dispositivo. Contacta al administrador para liberarlo."
@@ -853,6 +871,16 @@ async def verify_access_code(verify: AccessCodeVerify):
                     "device_registered_at": datetime.utcnow()
                 }}
             )
+    
+    # Successful login
+    login_record["success"] = True
+    await db.login_history.insert_one(login_record)
+    
+    # Update last login time
+    await db.access_codes.update_one(
+        {"code": verify.code},
+        {"$set": {"last_login_at": datetime.utcnow()}}
+    )
     
     return {"valid": True, "client_name": code['client_name']}
 
@@ -883,6 +911,81 @@ async def delete_access_code(code_id: str):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Access code not found")
     return {"message": "Access code deleted"}
+
+# ------------ Student Profile & Login History ------------
+
+class StudentProfileUpdate(BaseModel):
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    notes: Optional[str] = None
+    full_name: Optional[str] = None
+
+@api_router.get("/access-codes/{code_id}/details")
+async def get_access_code_details(code_id: str):
+    """Get detailed info about an access code including device and login history"""
+    code = await db.access_codes.find_one({"id": code_id})
+    if not code:
+        raise HTTPException(status_code=404, detail="Access code not found")
+    
+    # Get login history
+    login_history = await db.login_history.find(
+        {"access_code": code["code"]}
+    ).sort("timestamp", -1).limit(50).to_list(50)
+    
+    # Count successful vs failed
+    total_logins = len(login_history)
+    successful_logins = len([l for l in login_history if l.get("success")])
+    failed_attempts = total_logins - successful_logins
+    
+    return {
+        **serialize_doc(code),
+        "login_history": serialize_doc(login_history),
+        "stats": {
+            "total_logins": total_logins,
+            "successful_logins": successful_logins,
+            "failed_attempts": failed_attempts
+        }
+    }
+
+@api_router.put("/access-codes/{code_id}/profile")
+async def update_student_profile(code_id: str, profile: StudentProfileUpdate):
+    """Update student profile info (email, phone, notes)"""
+    update_data = {}
+    if profile.email is not None:
+        update_data["student_email"] = profile.email
+    if profile.phone is not None:
+        update_data["student_phone"] = profile.phone
+    if profile.notes is not None:
+        update_data["student_notes"] = profile.notes
+    if profile.full_name is not None:
+        update_data["student_full_name"] = profile.full_name
+    
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No data to update")
+    
+    result = await db.access_codes.update_one(
+        {"id": code_id},
+        {"$set": update_data}
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Access code not found")
+    
+    return {"message": "Profile updated successfully"}
+
+@api_router.get("/admin/login-history")
+async def get_all_login_history(limit: int = 100):
+    """Get recent login history across all users"""
+    history = await db.login_history.find().sort("timestamp", -1).limit(limit).to_list(limit)
+    return serialize_doc(history)
+
+@api_router.get("/admin/failed-attempts")
+async def get_failed_attempts(limit: int = 50):
+    """Get recent failed login attempts"""
+    history = await db.login_history.find(
+        {"success": False}
+    ).sort("timestamp", -1).limit(limit).to_list(limit)
+    return serialize_doc(history)
 
 # ------------ User Progress ------------
 
