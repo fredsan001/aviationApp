@@ -57,6 +57,7 @@ export default function HomeScreen() {
   const [adminPassword, setAdminPassword] = useState('');
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [autoLogging, setAutoLogging] = useState(true); // Show loading while checking saved code
   const [introVideo, setIntroVideo] = useState<any>(null);
   const [showIntroModal, setShowIntroModal] = useState(false);
   const [errorModal, setErrorModal] = useState<{visible: boolean; title: string; message: string}>({
@@ -75,9 +76,68 @@ export default function HomeScreen() {
     setErrorModal({ visible: true, title, message });
   };
 
+  // Check for saved access code on app load
   useEffect(() => {
     loadIntroVideo();
+    checkSavedAccessCode();
   }, []);
+
+  const checkSavedAccessCode = async () => {
+    try {
+      let savedCode: string | null = null;
+      
+      if (Platform.OS === 'web') {
+        savedCode = localStorage.getItem('saved_access_code');
+      } else {
+        savedCode = await SecureStore.getItemAsync('saved_access_code');
+      }
+      
+      if (savedCode) {
+        setAccessCode(savedCode);
+        // Auto-login with saved code
+        await handleAutoLogin(savedCode);
+      } else {
+        setAutoLogging(false);
+      }
+    } catch (error) {
+      console.error('Error checking saved access code:', error);
+      setAutoLogging(false);
+    }
+  };
+
+  const saveAccessCode = async (code: string) => {
+    try {
+      if (Platform.OS === 'web') {
+        localStorage.setItem('saved_access_code', code);
+      } else {
+        await SecureStore.setItemAsync('saved_access_code', code);
+      }
+    } catch (error) {
+      console.error('Error saving access code:', error);
+    }
+  };
+
+  const handleAutoLogin = async (savedCode: string) => {
+    setLoading(true);
+    try {
+      const deviceId = await getDeviceId();
+      const result = await apiService.verifyAccessCode(savedCode, deviceId);
+      storeAccessCode(savedCode, result.client_name);
+      router.replace('/student');
+    } catch (error: any) {
+      // If auto-login fails, clear saved code and show login screen
+      console.log('Auto-login failed, showing login screen');
+      if (Platform.OS === 'web') {
+        localStorage.removeItem('saved_access_code');
+      } else {
+        await SecureStore.deleteItemAsync('saved_access_code');
+      }
+      setAccessCode('');
+      setAutoLogging(false);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadIntroVideo = async () => {
     try {
@@ -103,6 +163,10 @@ export default function HomeScreen() {
       const deviceId = await getDeviceId();
       
       const result = await apiService.verifyAccessCode(accessCode.trim().toUpperCase(), deviceId);
+      
+      // Save the access code for future logins
+      await saveAccessCode(accessCode.trim().toUpperCase());
+      
       storeAccessCode(accessCode.trim().toUpperCase(), result.client_name);
       router.replace('/student');
     } catch (error: any) {
@@ -172,6 +236,22 @@ export default function HomeScreen() {
   const dismissKeyboard = () => {
     Keyboard.dismiss();
   };
+
+  // Show loading screen while checking for saved access code
+  if (autoLogging && loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.autoLoginContainer}>
+          <View style={styles.logoContainer}>
+            <Ionicons name="airplane" size={56} color="#2196F3" />
+          </View>
+          <Text style={styles.title}>AeroEnglish</Text>
+          <ActivityIndicator size="large" color="#2196F3" style={{ marginTop: 24 }} />
+          <Text style={styles.autoLoginText}>Iniciando sesión...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -610,5 +690,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     padding: 12,
     textAlign: 'center',
+  },
+  // Auto Login Styles
+  autoLoginContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  autoLoginText: {
+    color: '#888',
+    fontSize: 16,
+    marginTop: 16,
   },
 });

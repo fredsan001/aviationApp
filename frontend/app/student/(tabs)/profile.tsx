@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAppStore } from '../../../src/store/appStore';
 import { apiService } from '../../../src/utils/api';
+import * as SecureStore from 'expo-secure-store';
 
 export default function ProfileScreen() {
   const { clientName, accessCode, logout } = useAppStore();
@@ -36,16 +37,30 @@ export default function ProfileScreen() {
     }
   };
 
+  const clearSavedAccessCode = async () => {
+    try {
+      if (Platform.OS === 'web') {
+        localStorage.removeItem('saved_access_code');
+      } else {
+        await SecureStore.deleteItemAsync('saved_access_code');
+      }
+    } catch (error) {
+      console.error('Error clearing saved access code:', error);
+    }
+  };
+
   const handleLogout = () => {
     Alert.alert(
       'Cerrar Sesión',
-      '¿Estás seguro que deseas cerrar sesión?',
+      '¿Estás seguro que deseas cerrar sesión? Se eliminará tu código guardado.',
       [
         { text: 'Cancelar', style: 'cancel' },
         { 
           text: 'Cerrar Sesión', 
           style: 'destructive',
-          onPress: () => {
+          onPress: async () => {
+            // Clear saved access code
+            await clearSavedAccessCode();
             logout();
             if (Platform.OS === 'web') {
               window.location.href = '/';
