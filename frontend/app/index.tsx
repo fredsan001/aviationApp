@@ -59,11 +59,21 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(false);
   const [introVideo, setIntroVideo] = useState<any>(null);
   const [showIntroModal, setShowIntroModal] = useState(false);
+  const [errorModal, setErrorModal] = useState<{visible: boolean; title: string; message: string}>({
+    visible: false,
+    title: '',
+    message: ''
+  });
   
   const accessCodeRef = useRef<TextInput>(null);
   const adminPasswordRef = useRef<TextInput>(null);
   
   const { setAdmin, setAccessCode: storeAccessCode } = useAppStore();
+  
+  // Helper function to show error modal (works on all platforms including web)
+  const showErrorModal = (title: string, message: string) => {
+    setErrorModal({ visible: true, title, message });
+  };
 
   useEffect(() => {
     loadIntroVideo();
@@ -83,7 +93,7 @@ export default function HomeScreen() {
   const handleStudentLogin = async () => {
     Keyboard.dismiss();
     if (!accessCode.trim()) {
-      Alert.alert('Error', 'Por favor ingresa tu código de acceso');
+      showErrorModal('Error', 'Por favor ingresa tu código de acceso');
       return;
     }
     
@@ -100,13 +110,12 @@ export default function HomeScreen() {
       
       // Check if it's a device blocked error
       if (detail.includes('DEVICE_BLOCKED')) {
-        Alert.alert(
-          'Dispositivo Bloqueado',
-          'Este código de acceso ya está registrado en otro dispositivo. Por favor contacta al administrador para liberarlo.',
-          [{ text: 'Entendido', style: 'default' }]
+        showErrorModal(
+          '⚠️ Dispositivo Bloqueado',
+          'Este código de acceso ya está registrado en otro dispositivo.\n\nPor favor contacta al administrador para liberarlo.'
         );
       } else {
-        Alert.alert('Error', detail);
+        showErrorModal('Error', detail);
       }
     } finally {
       setLoading(false);
@@ -296,6 +305,34 @@ export default function HomeScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      
+      {/* Error Modal - Works on all platforms including web */}
+      <Modal
+        visible={errorModal.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setErrorModal({ ...errorModal, visible: false })}
+      >
+        <View style={styles.errorModalOverlay}>
+          <View style={styles.errorModalContent}>
+            <View style={styles.errorModalIcon}>
+              <Ionicons 
+                name={errorModal.title.includes('Bloqueado') ? "lock-closed" : "alert-circle"} 
+                size={48} 
+                color={errorModal.title.includes('Bloqueado') ? "#F44336" : "#FF9800"} 
+              />
+            </View>
+            <Text style={styles.errorModalTitle}>{errorModal.title}</Text>
+            <Text style={styles.errorModalMessage}>{errorModal.message}</Text>
+            <TouchableOpacity
+              style={styles.errorModalButton}
+              onPress={() => setErrorModal({ ...errorModal, visible: false })}
+            >
+              <Text style={styles.errorModalButtonText}>Entendido</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -445,6 +482,60 @@ const styles = StyleSheet.create({
   footerText: {
     color: '#555',
     fontSize: 13,
+    textAlign: 'center',
+  },
+  // Error Modal Styles
+  errorModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  errorModalContent: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 20,
+    padding: 32,
+    alignItems: 'center',
+    maxWidth: 340,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  errorModalIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#F4433620',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  errorModalTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  errorModalMessage: {
+    color: '#aaa',
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  errorModalButton: {
+    backgroundColor: '#F44336',
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+    borderRadius: 12,
+    minWidth: 150,
+  },
+  errorModalButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
     textAlign: 'center',
   },
 });
