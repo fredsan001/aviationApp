@@ -95,6 +95,7 @@ class AccessCodeCreate(BaseModel):
 
 class AccessCodeVerify(BaseModel):
     code: str
+    device_id: Optional[str] = None  # Unique device identifier
 
 class Category(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -755,7 +756,39 @@ async def verify_access_code(verify: AccessCodeVerify):
         if datetime.utcnow() > code['expires_at']:
             raise HTTPException(status_code=401, detail="Access code has expired")
     
+    # Single device enforcement
+    if verify.device_id:
+        registered_device = code.get('registered_device_id')
+        
+        if registered_device and registered_device != verify.device_id:
+            # Different device trying to login
+            raise HTTPException(
+                status_code=403, 
+                detail="DEVICE_BLOCKED: Este código ya está registrado en otro dispositivo. Contacta al administrador para liberarlo."
+            )
+        
+        # Register this device if not already registered
+        if not registered_device:
+            await db.access_codes.update_one(
+                {"code": verify.code},
+                {"$set": {
+                    "registered_device_id": verify.device_id,
+                    "device_registered_at": datetime.utcnow()
+                }}
+            )
+    
     return {"valid": True, "client_name": code['client_name']}
+
+@api_router.put("/access-codes/{code_id}/release-device")
+async def release_device(code_id: str):
+    """Admin: Release the registered device for an access code"""
+    result = await db.access_codes.update_one(
+        {"id": code_id},
+        {"$unset": {"registered_device_id": "", "device_registered_at": ""}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Access code not found")
+    return {"message": "Device released successfully"}
 
 @api_router.put("/access-codes/{code_id}/toggle")
 async def toggle_access_code(code_id: str):
@@ -876,6 +909,48 @@ async def get_watched_videos(access_code: str):
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 from emergentintegrations.llm.openai import OpenAITextToSpeech
+from pydub import AudioSegment
+from pydub.effects import low_pass_filter, high_pass_filter
+import io
+import random
+
+def apply_radio_effect(audio_bytes: bytes) -> bytes:
+    """Apply radio communication effect to audio (band-pass filter + compression)"""
+    try:
+        # Load audio from bytes
+        audio = AudioSegment.from_mp3(io.BytesIO(audio_bytes))
+        
+        # Apply band-pass filter (300Hz - 3400Hz typical radio range)
+        # High-pass to remove low frequencies
+        audio = high_pass_filter(audio, cutoff=300)
+        # Low-pass to remove high frequencies  
+        audio = low_pass_filter(audio, cutoff=3400)
+        
+        # Reduce dynamic range (compression effect)
+        audio = audio.compress_dynamic_range(threshold=-20.0, ratio=4.0, attack=5.0, release=50.0)
+        
+        # Add slight distortion by boosting then limiting
+        audio = audio + 3  # Boost by 3dB
+        audio = audio.normalize()
+        
+        # Add subtle noise floor
+        noise_level = -40  # dB
+        noise = AudioSegment.silent(duration=len(audio))
+        # Add random crackles
+        for _ in range(int(len(audio) / 500)):  # Occasional crackle
+            pos = random.randint(0, max(0, len(audio) - 50))
+            crackle = AudioSegment.silent(duration=20) + random.randint(-50, -35)
+            noise = noise.overlay(crackle, position=pos)
+        
+        audio = audio.overlay(noise)
+        
+        # Export back to bytes
+        buffer = io.BytesIO()
+        audio.export(buffer, format="mp3")
+        return buffer.getvalue()
+    except Exception as e:
+        logger.error(f"Radio effect failed: {e}")
+        return audio_bytes  # Return original if processing fails
 
 # ATC Simulation scenarios
 ATC_SCENARIOS = {
@@ -944,18 +1019,27 @@ ATC_SCENARIOS = {
     }
 }
 
-ATC_SYSTEM_PROMPT = """You are a highly realistic Air Traffic Controller (ATC) simulator. Your role is to provide authentic, professional ATC communications exactly as they would sound in real aviation.
+ATC_SYSTEM_PROMPT = """You are a highly realistic Air Traffic Controller (ATC) simulator for training pilots. You must maintain PERFECT CONSISTENCY throughout the entire conversation.
 
-CRITICAL RULES:
-1. Use ONLY standard FAA/ICAO phraseology
-2. Keep responses brief and professional - real ATC communications are short
-3. Use proper phonetic alphabet (Alpha, Bravo, Charlie, etc.)
-4. Include realistic callsigns, altimeter settings, runway numbers
-5. Add natural radio artifacts in your responses like "uhh" occasionally
-6. If pilot makes mistakes, correct them professionally
-7. Respond contextually to the flight phase and situation
-8. Use numbers pronounced individually (runway "three one left" not "thirty-one left")
-9. Include squawk codes, frequencies, and headings when appropriate
+CRITICAL MEMORY RULES:
+1. ALWAYS remember and reference ALL previous instructions you gave
+2. NEVER contradict yourself - if you gave an instruction, stick with it
+3. Keep track of: assigned runway, taxi route, altimeter setting, squawk code, headings, altitudes
+4. If pilot reads back correctly, acknowledge with "readback correct" 
+5. If pilot reads back incorrectly, correct them immediately
+
+STANDARD ATC PHRASEOLOGY:
+- Use ONLY standard FAA/ICAO phraseology
+- Keep responses brief (under 40 words typically)
+- Use phonetic alphabet (Alpha, Bravo, Charlie, etc.)
+- Pronounce numbers individually: runway "three one left", altitude "flight level three five zero"
+- Always include callsign at start or end of transmission
+
+REALISTIC ELEMENTS:
+- Include altimeter setting (e.g., "altimeter two niner niner two")
+- Include squawk codes when appropriate
+- Reference winds for takeoff/landing clearances
+- Use "roger", "wilco", "affirm", "negative" appropriately
 
 CURRENT SCENARIO:
 Airport/Location: {airport}
@@ -966,7 +1050,7 @@ Situation: {initial_situation}
 
 Aircraft: Cessna 172, Callsign November One Two Three Four Five (N12345)
 
-Respond ONLY as the ATC controller. Keep responses under 50 words typically. Be realistic and professional."""
+IMPORTANT: You are the ATC controller ONLY. Respond professionally and consistently. Track all clearances given."""
 
 class ATCSimulationRequest(BaseModel):
     scenario_id: str
@@ -1036,7 +1120,7 @@ async def simulate_atc(request: ATCSimulationRequest):
         user_message = UserMessage(text=f"Pilot transmission: {request.pilot_message}")
         atc_response = await chat.send_message(user_message)
         
-        # Generate audio with TTS
+        # Generate audio with TTS and apply radio effect
         audio_base64 = None
         try:
             tts = OpenAITextToSpeech(api_key=api_key)
@@ -1046,7 +1130,10 @@ async def simulate_atc(request: ATCSimulationRequest):
                 voice="onyx",  # Deep, authoritative voice for ATC
                 speed=1.1  # Slightly faster like real ATC
             )
-            audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+            
+            # Apply radio communication effect
+            radio_audio = apply_radio_effect(audio_bytes)
+            audio_base64 = base64.b64encode(radio_audio).decode('utf-8')
         except Exception as e:
             logger.error(f"TTS generation failed: {e}")
         

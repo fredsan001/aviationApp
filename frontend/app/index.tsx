@@ -19,6 +19,38 @@ import { router } from 'expo-router';
 import { useAppStore } from '../src/store/appStore';
 import { apiService } from '../src/utils/api';
 import { Video as ExpoVideo, ResizeMode } from 'expo-av';
+import * as Application from 'expo-application';
+import * as SecureStore from 'expo-secure-store';
+
+// Generate or retrieve a persistent device ID
+async function getDeviceId(): Promise<string> {
+  try {
+    // Try to get existing device ID
+    let deviceId = await SecureStore.getItemAsync('device_id');
+    
+    if (!deviceId) {
+      // Generate a new unique ID
+      if (Platform.OS === 'ios') {
+        deviceId = await Application.getIosIdForVendorAsync() || '';
+      } else if (Platform.OS === 'android') {
+        deviceId = Application.getAndroidId() || '';
+      }
+      
+      // Fallback to random ID if platform-specific ID not available
+      if (!deviceId) {
+        deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      }
+      
+      // Store for future use
+      await SecureStore.setItemAsync('device_id', deviceId);
+    }
+    
+    return deviceId;
+  } catch (error) {
+    // Fallback for web or if SecureStore fails
+    return `web_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+}
 
 export default function HomeScreen() {
   const [accessCode, setAccessCode] = useState('');
@@ -57,11 +89,25 @@ export default function HomeScreen() {
     
     setLoading(true);
     try {
-      const result = await apiService.verifyAccessCode(accessCode.trim().toUpperCase());
+      // Get device ID for single-device enforcement
+      const deviceId = await getDeviceId();
+      
+      const result = await apiService.verifyAccessCode(accessCode.trim().toUpperCase(), deviceId);
       storeAccessCode(accessCode.trim().toUpperCase(), result.client_name);
       router.replace('/student');
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.detail || 'Código de acceso inválido');
+      const detail = error.response?.data?.detail || 'Código de acceso inválido';
+      
+      // Check if it's a device blocked error
+      if (detail.includes('DEVICE_BLOCKED')) {
+        Alert.alert(
+          'Dispositivo Bloqueado',
+          'Este código de acceso ya está registrado en otro dispositivo. Por favor contacta al administrador para liberarlo.',
+          [{ text: 'Entendido', style: 'default' }]
+        );
+      } else {
+        Alert.alert('Error', detail);
+      }
     } finally {
       setLoading(false);
     }

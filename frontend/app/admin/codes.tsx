@@ -17,13 +17,19 @@ import { Ionicons } from '@expo/vector-icons';
 import { apiService } from '../../src/utils/api';
 import { AccessCode } from '../../src/types';
 
+interface AccessCodeWithDevice extends AccessCode {
+  registered_device_id?: string;
+  device_registered_at?: string;
+}
+
 export default function ManageAccessCodes() {
-  const [codes, setCodes] = useState<AccessCode[]>([]);
+  const [codes, setCodes] = useState<AccessCodeWithDevice[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [clientName, setClientName] = useState('');
   const [customCode, setCustomCode] = useState('');
   const [creating, setCreating] = useState(false);
+  const [releasingDevice, setReleasingDevice] = useState<string | null>(null);
 
   useEffect(() => {
     fetchCodes();
@@ -76,7 +82,7 @@ export default function ManageAccessCodes() {
     }
   };
 
-  const handleDelete = (code: AccessCode) => {
+  const handleDelete = (code: AccessCodeWithDevice) => {
     Alert.alert(
       'Delete Access Code',
       `Are you sure you want to delete the code for "${code.client_name}"?`,
@@ -99,7 +105,36 @@ export default function ManageAccessCodes() {
     );
   };
 
-  const renderCode = ({ item }: { item: AccessCode }) => (
+  const handleReleaseDevice = async (code: AccessCodeWithDevice) => {
+    Alert.alert(
+      'Liberar Dispositivo',
+      `¿Liberar el dispositivo registrado para "${code.client_name}"? El usuario podrá acceder desde un nuevo dispositivo.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Liberar',
+          onPress: async () => {
+            setReleasingDevice(code.id);
+            try {
+              await apiService.releaseDevice(code.id);
+              setCodes(codes.map(c => 
+                c.id === code.id 
+                  ? { ...c, registered_device_id: undefined, device_registered_at: undefined }
+                  : c
+              ));
+              Alert.alert('Éxito', 'Dispositivo liberado correctamente');
+            } catch (error) {
+              Alert.alert('Error', 'No se pudo liberar el dispositivo');
+            } finally {
+              setReleasingDevice(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const renderCode = ({ item }: { item: AccessCodeWithDevice }) => (
     <View style={[styles.codeCard, !item.is_active && styles.codeCardInactive]}>
       <View style={styles.codeInfo}>
         <Text style={styles.clientName}>{item.client_name}</Text>
@@ -108,15 +143,44 @@ export default function ManageAccessCodes() {
           <Text style={styles.codeText}>{item.code}</Text>
         </View>
         <Text style={styles.dateText}>
-          Created: {new Date(item.created_at).toLocaleDateString()}
+          Creado: {new Date(item.created_at).toLocaleDateString()}
         </Text>
+        
+        {/* Device Status */}
+        {item.registered_device_id ? (
+          <View style={styles.deviceStatus}>
+            <View style={styles.deviceRegistered}>
+              <Ionicons name="phone-portrait" size={14} color="#FF9800" />
+              <Text style={styles.deviceText}>Dispositivo registrado</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.releaseButton}
+              onPress={() => handleReleaseDevice(item)}
+              disabled={releasingDevice === item.id}
+            >
+              {releasingDevice === item.id ? (
+                <ActivityIndicator size="small" color="#F44336" />
+              ) : (
+                <>
+                  <Ionicons name="lock-open-outline" size={14} color="#F44336" />
+                  <Text style={styles.releaseText}>Liberar</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.deviceStatus}>
+            <Ionicons name="phone-portrait-outline" size={14} color="#4CAF50" />
+            <Text style={styles.deviceFreeText}>Sin dispositivo</Text>
+          </View>
+        )}
       </View>
       <View style={styles.codeActions}>
         <TouchableOpacity
           style={[styles.statusBadge, item.is_active ? styles.activeBadge : styles.inactiveBadge]}
           onPress={() => handleToggle(item)}
         >
-          <Text style={styles.statusText}>{item.is_active ? 'Active' : 'Inactive'}</Text>
+          <Text style={styles.statusText}>{item.is_active ? 'Activo' : 'Inactivo'}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.deleteButton}
@@ -266,6 +330,40 @@ const styles = StyleSheet.create({
   dateText: {
     color: '#666',
     fontSize: 12,
+  },
+  deviceStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: 6,
+  },
+  deviceRegistered: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  deviceText: {
+    color: '#FF9800',
+    fontSize: 12,
+  },
+  deviceFreeText: {
+    color: '#4CAF50',
+    fontSize: 12,
+  },
+  releaseButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F4433620',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginLeft: 8,
+    gap: 4,
+  },
+  releaseText: {
+    color: '#F44336',
+    fontSize: 11,
+    fontWeight: '600',
   },
   codeActions: {
     justifyContent: 'center',

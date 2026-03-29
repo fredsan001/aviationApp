@@ -109,8 +109,8 @@ export const apiService = {
     const response = await api.post('/access-codes', { client_name, code, expires_at });
     return response.data;
   },
-  verifyAccessCode: async (code: string) => {
-    const response = await api.post('/access-codes/verify', { code });
+  verifyAccessCode: async (code: string, deviceId?: string) => {
+    const response = await api.post('/access-codes/verify', { code, device_id: deviceId });
     return response.data;
   },
   toggleAccessCode: async (id: string) => {
@@ -256,6 +256,12 @@ export const apiService = {
   },
   getLearningPathVideos: async (accessCode: string) => {
     const response = await api.get(`/learning-path/videos/${accessCode}`);
+    return response.data;
+  },
+  
+  // Device Management
+  releaseDevice: async (codeId: string) => {
+    const response = await api.put(`/access-codes/${codeId}/release-device`);
     return response.data;
   },
 };
