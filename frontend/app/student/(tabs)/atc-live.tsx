@@ -8,10 +8,12 @@ import {
   Modal,
   Alert,
   Platform,
+  Linking,
+  Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import * as WebBrowser from 'expo-web-browser';
+import * as Clipboard from 'expo-clipboard';
 
 interface LiveFeed {
   id: string;
@@ -115,27 +117,47 @@ export default function ATCLiveScreen() {
     if (!selectedFeed || isOpening) return;
     
     const urlToOpen = selectedFeed.url;
-    setIsOpening(true);
     
-    // Close modal first
+    // Close modal immediately
     setSelectedFeed(null);
+    setIsOpening(false);
     
+    // Open URL in external browser
     try {
-      // Use expo-web-browser which opens an in-app browser
-      // This creates a fresh browser session each time and closes completely when done
-      await WebBrowser.openBrowserAsync(urlToOpen, {
-        // Show title and URL in the browser
-        showTitle: true,
-        // Enable toolbar for easier navigation
-        enableBarCollapsing: false,
-        // For iOS: use Safari View Controller
-        // For Android: use Chrome Custom Tabs
-      });
+      await Linking.openURL(urlToOpen);
     } catch (error) {
       console.error('Error opening URL:', error);
       Alert.alert('Error', 'No se pudo abrir la transmisión');
-    } finally {
-      setIsOpening(false);
+    }
+  };
+
+  const handleCopyLink = async () => {
+    if (!selectedFeed) return;
+    
+    try {
+      await Clipboard.setStringAsync(selectedFeed.url);
+      Alert.alert(
+        'Enlace Copiado',
+        'El enlace ha sido copiado al portapapeles. Puedes pegarlo en Safari o Chrome.',
+        [{ text: 'OK' }]
+      );
+      setSelectedFeed(null);
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo copiar el enlace');
+    }
+  };
+
+  const handleShareLink = async () => {
+    if (!selectedFeed) return;
+    
+    try {
+      await Share.share({
+        message: `${selectedFeed.name} - LiveATC\n${selectedFeed.url}`,
+        url: selectedFeed.url,
+        title: selectedFeed.name,
+      });
+    } catch (error) {
+      console.error('Error sharing:', error);
     }
   };
 
@@ -289,16 +311,17 @@ export default function ATCLiveScreen() {
 
             {/* Info Text */}
             <Text style={styles.modalInfoText}>
-              Se abrirá en tu navegador para una mejor experiencia de audio.
+              Si tienes problemas para abrir el enlace, usa "Copiar Enlace" y pégalo en Safari o Chrome.
             </Text>
 
             {/* Action Buttons */}
             <View style={styles.modalButtonsContainer}>
               <TouchableOpacity 
-                style={styles.cancelButton}
-                onPress={handleCloseFeed}
+                style={styles.copyButton}
+                onPress={handleCopyLink}
               >
-                <Text style={styles.cancelButtonText}>Cancelar</Text>
+                <Ionicons name="copy-outline" size={18} color="#2196F3" />
+                <Text style={styles.copyButtonText}>Copiar</Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
@@ -306,7 +329,26 @@ export default function ATCLiveScreen() {
                 onPress={handleOpenInBrowser}
               >
                 <Ionicons name="open-outline" size={20} color="#fff" />
-                <Text style={styles.openButtonText}>Abrir y Escuchar</Text>
+                <Text style={styles.openButtonText}>Abrir</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Secondary Actions */}
+            <View style={styles.secondaryActionsContainer}>
+              <TouchableOpacity 
+                style={styles.secondaryButton}
+                onPress={handleShareLink}
+              >
+                <Ionicons name="share-outline" size={18} color="#888" />
+                <Text style={styles.secondaryButtonText}>Compartir</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.secondaryButton}
+                onPress={handleCloseFeed}
+              >
+                <Ionicons name="close-outline" size={18} color="#888" />
+                <Text style={styles.secondaryButtonText}>Cancelar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -559,21 +601,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     width: '100%',
+    marginBottom: 16,
   },
-  cancelButton: {
+  copyButton: {
     flex: 1,
-    backgroundColor: '#333',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2196F320',
     paddingVertical: 14,
     borderRadius: 12,
-    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#2196F350',
   },
-  cancelButtonText: {
-    color: '#fff',
+  copyButtonText: {
+    color: '#2196F3',
     fontSize: 15,
     fontWeight: '600',
   },
   openButton: {
-    flex: 2,
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -585,5 +633,22 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: '600',
+  },
+  secondaryActionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 24,
+    width: '100%',
+  },
+  secondaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  secondaryButtonText: {
+    color: '#888',
+    fontSize: 14,
   },
 });
