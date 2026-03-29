@@ -87,6 +87,13 @@ class AccessCode(BaseModel):
     is_active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)
     expires_at: Optional[datetime] = None
+    registered_device_id: Optional[str] = None
+    device_registered_at: Optional[datetime] = None
+    last_login_at: Optional[datetime] = None
+    student_email: Optional[str] = None
+    student_phone: Optional[str] = None
+    student_notes: Optional[str] = None
+    student_full_name: Optional[str] = None
 
 class AccessCodeCreate(BaseModel):
     client_name: str
@@ -101,11 +108,13 @@ class Category(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     description: str = ""
+    order: int = 0
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class CategoryCreate(BaseModel):
     name: str
     description: str = ""
+    order: int = 0
 
 class UserProgress(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -317,8 +326,15 @@ async def create_category(category: CategoryCreate):
 
 @api_router.get("/categories", response_model=List[Category])
 async def get_categories():
-    categories = await db.categories.find().to_list(100)
-    return [Category(**cat) for cat in categories]
+    categories = await db.categories.find().sort("order", 1).to_list(100)
+    # Ensure all categories have an order field
+    result = []
+    for idx, cat in enumerate(categories):
+        cat_data = {**cat}
+        if "order" not in cat_data or cat_data["order"] is None:
+            cat_data["order"] = idx
+        result.append(Category(**cat_data))
+    return result
 
 class CategoryOrderUpdate(BaseModel):
     categories: List[dict]  # List of {id, order}
