@@ -306,6 +306,38 @@ export default function HomeScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
       
+      {/* Intro Video Modal */}
+      <Modal
+        visible={showIntroModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowIntroModal(false)}
+      >
+        <View style={styles.introModalOverlay}>
+          <View style={styles.introModalContent}>
+            <View style={styles.introModalHeader}>
+              <Text style={styles.introModalTitle}>Video Introductorio</Text>
+              <TouchableOpacity onPress={() => setShowIntroModal(false)}>
+                <Ionicons name="close" size={28} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            {introVideo && (
+              <View style={styles.introVideoContainer}>
+                <ExpoVideo
+                  source={{ uri: `${process.env.EXPO_PUBLIC_BACKEND_URL}/api/videos/${introVideo.id}/stream` }}
+                  style={styles.introVideoPlayer}
+                  useNativeControls
+                  resizeMode={ResizeMode.CONTAIN}
+                  shouldPlay={showIntroModal}
+                  isLooping={false}
+                />
+                <Text style={styles.introVideoTitle}>{introVideo.title}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
+
       {/* Error Modal - Works on all platforms including web */}
       <Modal
         visible={errorModal.visible}
@@ -536,6 +568,47 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+    textAlign: 'center',
+  },
+  // Intro Video Modal Styles
+  introModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  introModalContent: {
+    width: '95%',
+    maxWidth: 500,
+    backgroundColor: '#1E1E1E',
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  introModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  introModalTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  introVideoContainer: {
+    width: '100%',
+  },
+  introVideoPlayer: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    backgroundColor: '#000',
+  },
+  introVideoTitle: {
+    color: '#fff',
+    fontSize: 14,
+    padding: 12,
     textAlign: 'center',
   },
 });

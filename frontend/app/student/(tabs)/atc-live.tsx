@@ -1,14 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Linking,
+  Modal,
+  ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { WebView } from 'react-native-webview';
 
 interface LiveFeed {
   id: string;
@@ -92,20 +95,22 @@ const getTypeLabel = (type: LiveFeed['type']) => {
 
 export default function ATCLiveScreen() {
   const [selectedType, setSelectedType] = useState<string | null>(null);
+  const [selectedFeed, setSelectedFeed] = useState<LiveFeed | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const webViewRef = useRef<WebView>(null);
 
   const filteredFeeds = selectedType 
     ? LIVE_FEEDS.filter(feed => feed.type === selectedType)
     : LIVE_FEEDS;
 
-  const handleOpenFeed = async (url: string) => {
-    try {
-      const supported = await Linking.canOpenURL(url);
-      if (supported) {
-        await Linking.openURL(url);
-      }
-    } catch (error) {
-      console.error('Error opening URL:', error);
-    }
+  const handleOpenFeed = (feed: LiveFeed) => {
+    setSelectedFeed(feed);
+    setIsLoading(true);
+  };
+
+  const handleCloseFeed = () => {
+    setSelectedFeed(null);
+    setIsLoading(false);
   };
 
   const types = ['tower', 'approach', 'center', 'ground'] as const;
@@ -163,7 +168,7 @@ export default function ATCLiveScreen() {
             <TouchableOpacity
               key={feed.id}
               style={styles.feedCard}
-              onPress={() => handleOpenFeed(feed.url)}
+              onPress={() => handleOpenFeed(feed)}
               activeOpacity={0.8}
             >
               <View style={styles.feedHeader}>
@@ -208,6 +213,52 @@ export default function ATCLiveScreen() {
           </Text>
         </View>
       </ScrollView>
+
+      {/* WebView Modal for Live Feed */}
+      <Modal
+        visible={selectedFeed !== null}
+        animationType="slide"
+        onRequestClose={handleCloseFeed}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={handleCloseFeed} style={styles.closeButton}>
+              <Ionicons name="close" size={28} color="#fff" />
+            </TouchableOpacity>
+            <View style={styles.modalTitleContainer}>
+              <Text style={styles.modalTitle}>{selectedFeed?.name}</Text>
+              <Text style={styles.modalSubtitle}>{selectedFeed?.location}</Text>
+            </View>
+            <View style={[styles.liveIndicatorModal, { backgroundColor: selectedFeed ? getTypeColor(selectedFeed.type) : '#888' }]}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveText}>EN VIVO</Text>
+            </View>
+          </View>
+          
+          {isLoading && (
+            <View style={styles.loadingOverlay}>
+              <ActivityIndicator size="large" color="#2196F3" />
+              <Text style={styles.loadingText}>Conectando...</Text>
+            </View>
+          )}
+          
+          {selectedFeed && (
+            <WebView
+              ref={webViewRef}
+              source={{ uri: selectedFeed.url }}
+              style={styles.webView}
+              onLoadStart={() => setIsLoading(true)}
+              onLoadEnd={() => setIsLoading(false)}
+              allowsInlineMediaPlayback={true}
+              mediaPlaybackRequiresUserAction={false}
+              javaScriptEnabled={true}
+              domStorageEnabled={true}
+              startInLoadingState={true}
+              scalesPageToFit={true}
+            />
+          )}
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -360,5 +411,63 @@ const styles = StyleSheet.create({
     color: '#888',
     fontSize: 13,
     lineHeight: 20,
+  },
+  // Modal styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#121212',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#1E1E1E',
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  modalTitleContainer: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  modalTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalSubtitle: {
+    color: '#888',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  liveIndicatorModal: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    gap: 6,
+  },
+  webView: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 80,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(18, 18, 18, 0.9)',
+    zIndex: 10,
+  },
+  loadingText: {
+    color: '#888',
+    marginTop: 12,
+    fontSize: 14,
   },
 });
