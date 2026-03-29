@@ -156,20 +156,6 @@ export default function LearningPathEditor() {
         <View style={styles.videoInfo}>
           <Text style={styles.videoTitle} numberOfLines={2}>{video.title}</Text>
           <Text style={styles.videoDuration}>{formatDuration(video.duration || 0)}</Text>
-          
-          <TouchableOpacity
-            style={[styles.exclusiveBtn, item.is_path_exclusive && styles.exclusiveBtnActive]}
-            onPress={() => toggleExclusive(item.video_id)}
-          >
-            <Ionicons 
-              name={item.is_path_exclusive ? "lock-closed" : "lock-open"} 
-              size={14} 
-              color={item.is_path_exclusive ? "#FF9800" : "#888"} 
-            />
-            <Text style={[styles.exclusiveText, item.is_path_exclusive && styles.exclusiveTextActive]}>
-              {item.is_path_exclusive ? 'Solo Path' : 'Visible en Todo'}
-            </Text>
-          </TouchableOpacity>
         </View>
 
         <TouchableOpacity
@@ -207,18 +193,11 @@ export default function LearningPathEditor() {
         ) : (
           <View style={styles.addButtons}>
             <TouchableOpacity
-              style={[styles.addBtn, styles.addBtnNormal]}
+              style={[styles.addBtn, styles.addBtnPath]}
               onPress={() => addVideoToPath(item, false)}
             >
-              <Ionicons name="add" size={20} color="#fff" />
-              <Text style={styles.addBtnText}>Todos</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.addBtn, styles.addBtnExclusive]}
-              onPress={() => addVideoToPath(item, true)}
-            >
-              <Ionicons name="lock-closed" size={16} color="#fff" />
-              <Text style={styles.addBtnText}>Solo Path</Text>
+              <Ionicons name="navigate" size={16} color="#fff" />
+              <Text style={styles.addBtnText}>Añadir a Path</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -277,9 +256,7 @@ export default function LearningPathEditor() {
           <View style={styles.infoBox}>
             <Ionicons name="information-circle" size={20} color="#2196F3" />
             <Text style={styles.infoText}>
-              <Text style={styles.infoBold}>Solo Path:</Text> Videos exclusivos de la ruta (no aparecen en Todos).
-              {'\n'}
-              <Text style={styles.infoBold}>Visible en Todo:</Text> Videos que aparecen en ambas vistas.
+              Añade videos a la ruta de aprendizaje. Los estudiantes deben ver cada video en orden para desbloquear el siguiente.
             </Text>
           </View>
 
@@ -537,6 +514,9 @@ const styles = StyleSheet.create({
   },
   addBtnNormal: {
     backgroundColor: '#2196F3',
+  },
+  addBtnPath: {
+    backgroundColor: '#E91E63',
   },
   addBtnExclusive: {
     backgroundColor: '#FF9800',

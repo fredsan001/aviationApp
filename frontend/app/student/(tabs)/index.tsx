@@ -329,78 +329,93 @@ export default function StudentVideos() {
         </TouchableOpacity>
       </View>
 
-      {/* Special Categories (Row 1) */}
-      <View style={styles.specialCategoriesRow}>
-        {specialCategories.map((item) => {
-          const isActive = selectedCategory === item.id;
-          return (
-            <TouchableOpacity
-              key={item.id}
-              style={[
-                styles.specialCategoryChip,
-                item.id === '__watched__' && styles.watchedChip,
-                item.id === '__watched__' && isActive && styles.watchedChipActive,
-                item.id === '__unwatched__' && styles.unwatchedChip,
-                item.id === '__unwatched__' && isActive && styles.unwatchedChipActive,
-                item.id === '__ready__' && styles.readyChip,
-                item.id === '__ready__' && isActive && styles.readyChipActive,
-              ]}
-              onPress={() => setSelectedCategory(isActive ? null : item.id)}
-            >
-              <Ionicons 
-                name={item.icon as any} 
-                size={14} 
-                color={isActive ? '#fff' : item.color} 
-              />
-              <Text style={[
-                styles.specialCategoryText,
-                { color: isActive ? '#fff' : item.color }
-              ]}>
-                {item.name}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {/* Regular Categories (Row 2) */}
-      <View style={styles.categoriesContainer}>
-        <FlatList
-          horizontal
-          data={regularCategories}
-          renderItem={({ item }) => {
-            const isActive = selectedCategory === item.name || (item.id === 'all' && !selectedCategory);
-            
-            return (
-              <TouchableOpacity
-                style={[
-                  styles.categoryChip,
-                  isActive && styles.categoryChipActive,
-                ]}
-                onPress={() => {
-                  if (item.id === 'all') {
-                    setSelectedCategory(null);
-                  } else {
-                    setSelectedCategory(item.name);
-                  }
-                }}
-              >
-                <Text
+      {/* Categories - Only show in "All" mode */}
+      {viewMode === 'all' && (
+        <>
+          {/* Special Categories (Row 1) */}
+          <View style={styles.specialCategoriesRow}>
+            {specialCategories.map((item) => {
+              const isActive = selectedCategory === item.id;
+              return (
+                <TouchableOpacity
+                  key={item.id}
                   style={[
-                    styles.categoryChipText,
-                    isActive && styles.categoryChipTextActive,
+                    styles.specialCategoryChip,
+                    item.id === '__watched__' && styles.watchedChip,
+                    item.id === '__watched__' && isActive && styles.watchedChipActive,
+                    item.id === '__unwatched__' && styles.unwatchedChip,
+                    item.id === '__unwatched__' && isActive && styles.unwatchedChipActive,
+                    item.id === '__ready__' && styles.readyChip,
+                    item.id === '__ready__' && isActive && styles.readyChipActive,
                   ]}
+                  onPress={() => setSelectedCategory(isActive ? null : item.id)}
                 >
-                  {item.name}
-                </Text>
-              </TouchableOpacity>
-            );
-          }}
-          keyExtractor={(item) => item.id}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoriesList}
-        />
-      </View>
+                  <Ionicons 
+                    name={item.icon as any} 
+                    size={14} 
+                    color={isActive ? '#fff' : item.color} 
+                  />
+                  <Text style={[
+                    styles.specialCategoryText,
+                    { color: isActive ? '#fff' : item.color }
+                  ]}>
+                    {item.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Regular Categories (Row 2) */}
+          <View style={styles.categoriesContainer}>
+            <FlatList
+              horizontal
+              data={regularCategories}
+              renderItem={({ item }) => {
+                const isActive = selectedCategory === item.name || (item.id === 'all' && !selectedCategory);
+                
+                return (
+                  <TouchableOpacity
+                    style={[
+                      styles.categoryChip,
+                      isActive && styles.categoryChipActive,
+                    ]}
+                    onPress={() => {
+                      if (item.id === 'all') {
+                        setSelectedCategory(null);
+                      } else {
+                        setSelectedCategory(item.name);
+                      }
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.categoryChipText,
+                        isActive && styles.categoryChipTextActive,
+                      ]}
+                    >
+                      {item.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              }}
+              keyExtractor={(item) => item.id}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categoriesList}
+            />
+          </View>
+        </>
+      )}
+
+      {/* Path Mode Info */}
+      {viewMode === 'path' && pathVideos.length > 0 && (
+        <View style={styles.pathInfoBar}>
+          <Ionicons name="navigate" size={16} color="#E91E63" />
+          <Text style={styles.pathInfoText}>
+            Ruta de Aprendizaje • {pathVideos.length} videos
+          </Text>
+        </View>
+      )}
 
       {/* Videos */}
       <FlatList
@@ -543,6 +558,22 @@ const styles = StyleSheet.create({
   },
   categoryChipTextActive: {
     color: '#fff',
+  },
+  pathInfoBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1A1A2E',
+    paddingVertical: 10,
+    marginHorizontal: 16,
+    marginVertical: 8,
+    borderRadius: 8,
+    gap: 8,
+  },
+  pathInfoText: {
+    color: '#E91E63',
+    fontSize: 14,
+    fontWeight: '600',
   },
   videosList: {
     padding: 16,
