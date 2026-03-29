@@ -179,8 +179,13 @@ export default function StudentVideos() {
   };
 
   const renderVideo = ({ item, index }: { item: VideoWithProgress; index: number }) => {
+    // Safety check for undefined items
+    if (!item || !item.id) {
+      return null;
+    }
+    
     const thumbnailUrl = apiService.getVideoThumbnailUrl(item.id);
-    const isWatched = watchedVideoIds.has(item.id) || item.watched_count && item.watched_count > 0;
+    const isWatched = watchedVideoIds.has(item.id) || (item.watched_count && item.watched_count > 0);
     const isReady = item.ready_for_evaluation || progressMap.get(item.id)?.ready_for_evaluation;
     
     // Path mode: Check if video is unlocked
@@ -188,9 +193,11 @@ export default function StudentVideos() {
     let isLocked = false;
     if (viewMode === 'path' && index > 0) {
       const previousVideo = displayedVideos[index - 1];
-      const previousWatched = watchedVideoIds.has(previousVideo.id) || 
-                              (previousVideo.watched_count && previousVideo.watched_count > 0);
-      isLocked = !previousWatched;
+      if (previousVideo) {
+        const previousWatched = watchedVideoIds.has(previousVideo.id) || 
+                                (previousVideo.watched_count && previousVideo.watched_count > 0);
+        isLocked = !previousWatched;
+      }
     }
     
     const handlePress = () => {
@@ -204,20 +211,17 @@ export default function StudentVideos() {
       }
       router.push({ pathname: '/student/player', params: { id: item.id } });
     };
-    
+
     return (
       <TouchableOpacity
         style={[styles.videoCard, isLocked && styles.videoCardLocked]}
         onPress={handlePress}
         activeOpacity={isLocked ? 0.9 : 0.8}
-      >
-        <View style={styles.videoThumbnail}>
-          <Image
+      ><View style={styles.videoThumbnail}><Image
             source={{ uri: thumbnailUrl }}
             style={[styles.thumbnailImage, isLocked && styles.thumbnailLocked]}
             resizeMode="cover"
-          />
-          {isLocked ? (
+          />{isLocked ? (
             <View style={styles.lockedOverlay}>
               <Ionicons name="lock-closed" size={48} color="rgba(255,255,255,0.9)" />
             </View>
@@ -225,47 +229,35 @@ export default function StudentVideos() {
             <View style={styles.playIconOverlay}>
               <Ionicons name="play-circle" size={48} color="rgba(255,255,255,0.9)" />
             </View>
-          )}
-          <View style={styles.durationBadge}>
+          )}<View style={styles.durationBadge}>
             <Text style={styles.durationText}>{formatDuration(item.duration)}</Text>
-          </View>
-          {isWatched && !isLocked && (
+          </View>{isWatched && !isLocked && (
             <View style={styles.watchedBadge}>
               <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
               <Text style={styles.watchedText}>Visto</Text>
             </View>
-          )}
-          {viewMode === 'path' && (
+          )}{viewMode === 'path' && (
             <View style={[styles.pathOrderBadge, isLocked && styles.pathOrderBadgeLocked]}>
               <Text style={styles.pathOrderText}>{index + 1}</Text>
             </View>
-          )}
-        </View>
-        <View style={styles.videoInfo}>
+          )}</View><View style={styles.videoInfo}>
           <Text style={[styles.videoTitle, isLocked && styles.videoTitleLocked]} numberOfLines={2}>
-            {item.title}
-          </Text>
-          {viewMode !== 'path' && (
+            {item.title || 'Sin título'}
+          </Text>{viewMode !== 'path' && item.category ? (
             <Text style={styles.videoCategory}>{item.category}</Text>
-          )}
-          {!isLocked && (
-            <>
-              <View style={styles.videoMeta}>
-                {item.subtitles && item.subtitles.length > 0 && (
+          ) : null}{!isLocked ? (
+            <React.Fragment>
+              <View style={styles.videoMeta}>{item.subtitles && item.subtitles.length > 0 ? (
                   <View style={styles.subtitleBadge}>
                     <Ionicons name="text" size={12} color="#4CAF50" />
                     <Text style={styles.subtitleCount}>{item.subtitles.length} segmentos</Text>
                   </View>
-                )}
-                {item.watched_count && item.watched_count > 0 && (
+                ) : null}{item.watched_count && item.watched_count > 0 ? (
                   <View style={styles.watchCountBadge}>
                     <Ionicons name="eye" size={12} color="#2196F3" />
                     <Text style={styles.watchCountText}>{item.watched_count}x</Text>
                   </View>
-                )}
-              </View>
-              
-              {/* Ready for Evaluation Checkbox */}
+                ) : null}</View>
               <TouchableOpacity
                 style={[styles.readyCheckbox, isReady && styles.readyCheckboxActive]}
                 onPress={(e) => {
@@ -280,9 +272,8 @@ export default function StudentVideos() {
                   Listo para evaluación
                 </Text>
               </TouchableOpacity>
-            </>
-          )}
-        </View>
+            </React.Fragment>
+          ) : null}</View>
       </TouchableOpacity>
     );
   };
@@ -442,9 +433,9 @@ export default function StudentVideos() {
 
       {/* Videos */}
       <FlatList
-        data={displayedVideos}
+        data={displayedVideos.filter(v => v && v.id)}
         renderItem={renderVideo}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item?.id || Math.random().toString()}
         contentContainerStyle={styles.videosList}
         refreshControl={
           <RefreshControl
