@@ -96,6 +96,7 @@ const getTypeLabel = (type: LiveFeed['type']) => {
 export default function ATCLiveScreen() {
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [selectedFeed, setSelectedFeed] = useState<LiveFeed | null>(null);
+  const [isOpening, setIsOpening] = useState(false);
 
   const filteredFeeds = selectedType 
     ? LIVE_FEEDS.filter(feed => feed.type === selectedType)
@@ -107,23 +108,34 @@ export default function ATCLiveScreen() {
 
   const handleCloseFeed = () => {
     setSelectedFeed(null);
+    setIsOpening(false);
   };
 
   const handleOpenInBrowser = async () => {
-    if (!selectedFeed) return;
+    if (!selectedFeed || isOpening) return;
     
-    try {
-      const supported = await Linking.canOpenURL(selectedFeed.url);
-      if (supported) {
-        await Linking.openURL(selectedFeed.url);
-      } else {
-        Alert.alert('Error', 'No se puede abrir el enlace');
+    const urlToOpen = selectedFeed.url;
+    setIsOpening(true);
+    
+    // Close modal first
+    setSelectedFeed(null);
+    
+    // Small delay to ensure modal is closed before opening browser
+    setTimeout(async () => {
+      try {
+        const supported = await Linking.canOpenURL(urlToOpen);
+        if (supported) {
+          await Linking.openURL(urlToOpen);
+        } else {
+          Alert.alert('Error', 'No se puede abrir el enlace');
+        }
+      } catch (error) {
+        console.error('Error opening URL:', error);
+        Alert.alert('Error', 'No se pudo abrir la transmisión');
+      } finally {
+        setIsOpening(false);
       }
-    } catch (error) {
-      console.error('Error opening URL:', error);
-      Alert.alert('Error', 'No se pudo abrir la transmisión');
-    }
-    handleCloseFeed();
+    }, 300);
   };
 
   const types = ['tower', 'approach', 'center', 'ground'] as const;
