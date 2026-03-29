@@ -155,6 +155,40 @@ def generate_access_code():
     import string
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
+async def compress_video(input_path: str, output_path: str, video_id: str) -> bool:
+    """Compress video to 720p resolution with optimized settings"""
+    try:
+        await db.videos.update_one(
+            {"id": video_id},
+            {"$set": {"processing_status": "Compressing video...", "processing_progress": 5}}
+        )
+        
+        # Compress to 720p, use H.264 codec with reasonable quality
+        # -crf 23 is good quality, -preset fast is reasonable speed
+        process = await asyncio.create_subprocess_exec(
+            '/usr/bin/ffmpeg', '-i', input_path,
+            '-vf', 'scale=-2:720',  # Scale to 720p height, maintain aspect ratio
+            '-c:v', 'libx264',
+            '-crf', '23',
+            '-preset', 'fast',
+            '-c:a', 'aac',
+            '-b:a', '128k',
+            '-movflags', '+faststart',  # Enable streaming
+            '-y', output_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode != 0:
+            logger.error(f"Video compression failed: {stderr.decode()[:200]}")
+            return False
+        
+        return os.path.exists(output_path)
+    except Exception as e:
+        logger.error(f"Video compression error: {e}")
+        return False
+
 async def transcribe_video_audio(video_id: str, video_path: str):
     """Background task to transcribe video audio using OpenAI Whisper"""
     try:
@@ -163,27 +197,31 @@ async def transcribe_video_audio(video_id: str, video_path: str):
         # Update status to processing
         await db.videos.update_one(
             {"id": video_id},
-            {"$set": {"is_processing": True, "processing_status": "Extracting audio..."}}
+            {"$set": {"is_processing": True, "processing_status": "Extracting audio...", "processing_progress": 10}}
         )
         
         # Extract audio from video using ffmpeg
         audio_path = str(video_path).replace('.mp4', '.mp3').replace('.mov', '.mp3').replace('.webm', '.mp3')
+        if audio_path == video_path:
+            audio_path = video_path + '.mp3'
         
         # Use ffmpeg to extract audio
-        import subprocess
         process = await asyncio.create_subprocess_exec(
-            'ffmpeg', '-i', video_path, '-vn', '-acodec', 'libmp3lame', '-y', audio_path,
+            '/usr/bin/ffmpeg', '-i', video_path, '-vn', '-acodec', 'libmp3lame', '-y', audio_path,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
-        await process.communicate()
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode != 0:
+            raise Exception(f"FFmpeg audio extraction failed: {stderr.decode()[:200]}")
         
         if not os.path.exists(audio_path):
             raise Exception("Failed to extract audio from video")
         
         await db.videos.update_one(
             {"id": video_id},
-            {"$set": {"processing_status": "Transcribing with AI..."}}
+            {"$set": {"processing_status": "Transcribing with AI...", "processing_progress": 40}}
         )
         
         # Transcribe using OpenAI Whisper
@@ -226,7 +264,8 @@ async def transcribe_video_audio(video_id: str, video_path: str):
                 "$set": {
                     "subtitles": subtitles,
                     "is_processing": False,
-                    "processing_status": "Completed"
+                    "processing_status": "Completed",
+                    "processing_progress": 100
                 }
             }
         )
@@ -371,42 +410,80 @@ async def create_video(
         file_ext = '.mp4'  # Default
     unique_filename = f"{uuid.uuid4()}{file_ext}"
     file_path = UPLOADS_DIR / unique_filename
+    temp_path = UPLOADS_DIR / f"temp_{unique_filename}"
     
-    # Save file
-    async with aiofiles.open(file_path, 'wb') as out_file:
+    # Save file temporarily first
+    async with aiofiles.open(temp_path, 'wb') as out_file:
         content = await file.read()
         await out_file.write(content)
     
-    # Get video duration using ffprobe
-    duration = 0
-    try:
-        import subprocess
-        result = subprocess.run(
-            ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', 
-             '-of', 'default=noprint_wrappers=1:nokey=1', str(file_path)],
-            capture_output=True, text=True
-        )
-        duration = float(result.stdout.strip()) if result.stdout.strip() else 0
-    except Exception as e:
-        logger.warning(f"Could not get video duration: {e}")
-    
-    # Create video record
+    # Create video record early to track progress
+    video_id = str(uuid.uuid4())
     video = Video(
+        id=video_id,
         title=title,
         description=description,
         category=category,
-        categories=categories_list,  # Multiple categories
+        categories=categories_list,
         video_filename=unique_filename,
-        duration=duration,
-        is_processing=should_transcribe,
-        processing_status="Queued for transcription" if should_transcribe else ""
+        duration=0,
+        is_processing=True,
+        processing_status="Compressing video...",
+        processing_progress=0
     )
-    
     await db.videos.insert_one(video.dict())
     
-    # Start transcription in background
-    if should_transcribe:
-        background_tasks.add_task(transcribe_video_audio, video.id, str(file_path))
+    # Compress video in background
+    async def process_video():
+        try:
+            # Compress the video
+            compressed = await compress_video(str(temp_path), str(file_path), video_id)
+            
+            if compressed:
+                # Remove temp file
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            else:
+                # If compression failed, just rename temp file
+                import shutil
+                shutil.move(str(temp_path), str(file_path))
+            
+            # Get video duration
+            duration = 0
+            try:
+                result = await asyncio.create_subprocess_exec(
+                    '/usr/bin/ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                    '-of', 'default=noprint_wrappers=1:nokey=1', str(file_path),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, _ = await result.communicate()
+                duration = float(stdout.decode().strip()) if stdout.decode().strip() else 0
+            except Exception as e:
+                logger.warning(f"Could not get video duration: {e}")
+            
+            # Update video record
+            await db.videos.update_one(
+                {"id": video_id},
+                {"$set": {"duration": duration}}
+            )
+            
+            # Start transcription if requested
+            if should_transcribe:
+                await transcribe_video_audio(video_id, str(file_path))
+            else:
+                await db.videos.update_one(
+                    {"id": video_id},
+                    {"$set": {"is_processing": False, "processing_status": "", "processing_progress": 100}}
+                )
+        except Exception as e:
+            logger.error(f"Video processing error: {e}")
+            await db.videos.update_one(
+                {"id": video_id},
+                {"$set": {"is_processing": False, "processing_status": f"Error: {str(e)}", "processing_progress": 0}}
+            )
+    
+    background_tasks.add_task(process_video)
     
     return video.dict()
 

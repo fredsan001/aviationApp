@@ -40,6 +40,17 @@ export default function ManageVideos() {
     }, [])
   );
 
+  // Auto-refresh while there are processing videos
+  useEffect(() => {
+    const hasProcessing = videos.some(v => v.is_processing);
+    if (hasProcessing) {
+      const interval = setInterval(() => {
+        fetchVideos();
+      }, 3000); // Refresh every 3 seconds
+      return () => clearInterval(interval);
+    }
+  }, [videos]);
+
   const onRefresh = () => {
     setRefreshing(true);
     fetchVideos();
@@ -151,7 +162,17 @@ export default function ManageVideos() {
           {item.is_processing && (
             <View style={styles.processingInfo}>
               <Text style={styles.processingText}>{item.processing_status}</Text>
-              <Text style={styles.processingTime}>{getProcessingTime()}</Text>
+              <View style={styles.progressBarContainer}>
+                <View 
+                  style={[
+                    styles.progressBarFill, 
+                    { width: `${item.processing_progress || 0}%` }
+                  ]} 
+                />
+              </View>
+              <Text style={styles.processingTime}>
+                {item.processing_progress || 0}% • {getProcessingTime()}
+              </Text>
             </View>
           )}
         </View>
@@ -297,6 +318,19 @@ const styles = StyleSheet.create({
   processingText: {
     color: '#FF9800',
     fontSize: 12,
+  },
+  progressBarContainer: {
+    height: 6,
+    backgroundColor: '#2A2A2A',
+    borderRadius: 3,
+    marginTop: 6,
+    marginBottom: 4,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#FF9800',
+    borderRadius: 3,
   },
   processingTime: {
     color: '#888',
