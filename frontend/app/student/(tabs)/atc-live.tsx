@@ -6,12 +6,12 @@ import {
   ScrollView,
   TouchableOpacity,
   Modal,
-  Linking,
   Alert,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as WebBrowser from 'expo-web-browser';
 
 interface LiveFeed {
   id: string;
@@ -120,22 +120,23 @@ export default function ATCLiveScreen() {
     // Close modal first
     setSelectedFeed(null);
     
-    // Small delay to ensure modal is closed before opening browser
-    setTimeout(async () => {
-      try {
-        const supported = await Linking.canOpenURL(urlToOpen);
-        if (supported) {
-          await Linking.openURL(urlToOpen);
-        } else {
-          Alert.alert('Error', 'No se puede abrir el enlace');
-        }
-      } catch (error) {
-        console.error('Error opening URL:', error);
-        Alert.alert('Error', 'No se pudo abrir la transmisión');
-      } finally {
-        setIsOpening(false);
-      }
-    }, 300);
+    try {
+      // Use expo-web-browser which opens an in-app browser
+      // This creates a fresh browser session each time and closes completely when done
+      await WebBrowser.openBrowserAsync(urlToOpen, {
+        // Show title and URL in the browser
+        showTitle: true,
+        // Enable toolbar for easier navigation
+        enableBarCollapsing: false,
+        // For iOS: use Safari View Controller
+        // For Android: use Chrome Custom Tabs
+      });
+    } catch (error) {
+      console.error('Error opening URL:', error);
+      Alert.alert('Error', 'No se pudo abrir la transmisión');
+    } finally {
+      setIsOpening(false);
+    }
   };
 
   const types = ['tower', 'approach', 'center', 'ground'] as const;
