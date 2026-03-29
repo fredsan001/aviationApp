@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,10 +11,12 @@ import {
   Platform,
   Animated,
   Easing,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
+import { useFocusEffect } from 'expo-router';
 import { useAppStore } from '../../../src/store/appStore';
 import { apiService } from '../../../src/utils/api';
 
@@ -96,12 +98,13 @@ export default function PracticeScreen() {
   const [sessionId] = useState(() => `session_${Date.now()}`);
   
   // ATC Customization State
-  const [customCallsign, setCustomCallsign] = useState('');
+  const [customCallsign, setCustomCallsign] = useState('N12345');
   const [selectedAircraftType, setSelectedAircraftType] = useState('');
   const [aircraftTypes, setAircraftTypes] = useState<{type: string; category: string}[]>([]);
   const [showCustomization, setShowCustomization] = useState(false);
   const [currentCallsign, setCurrentCallsign] = useState('');
   const [currentAircraftType, setCurrentAircraftType] = useState('');
+  const [showAircraftSetup, setShowAircraftSetup] = useState(false);
 
   // Listening Test State
   const [listeningSegment, setListeningSegment] = useState<ListeningSegment | null>(null);
@@ -129,6 +132,51 @@ export default function PracticeScreen() {
       if (recordingRef.current) recordingRef.current.stopAndUnloadAsync();
     };
   }, []);
+
+  // Stop simulator when leaving the tab
+  useFocusEffect(
+    useCallback(() => {
+      // Component focused - do nothing special
+      return () => {
+        // Component unfocused - stop everything
+        stopSimulatorCompletely();
+      };
+    }, [])
+  );
+
+  const stopSimulatorCompletely = async () => {
+    try {
+      // Stop any playing audio
+      if (soundRef.current) {
+        await soundRef.current.stopAsync();
+        await soundRef.current.unloadAsync();
+        soundRef.current = null;
+      }
+      
+      // Stop any recording
+      if (recordingRef.current) {
+        await recordingRef.current.stopAndUnloadAsync();
+        recordingRef.current = null;
+      }
+      
+      if (listeningRecordingRef.current) {
+        await listeningRecordingRef.current.stopAndUnloadAsync();
+        listeningRecordingRef.current = null;
+      }
+      
+      // Reset simulation state
+      setInSimulation(false);
+      setIsTransmitting(false);
+      setIsReceiving(false);
+      setIsRecording(false);
+      setIsPlaying(false);
+      setMessages([]);
+      setSelectedScenario(null);
+      setMode('menu');
+    } catch (e) {
+      console.error('Error stopping simulator:', e);
+    }
+  };
 
   useEffect(() => {
     if (mode === 'simulator') {
@@ -289,14 +337,35 @@ export default function PracticeScreen() {
     setInSimulation(true);
     setMessages([]);
     setIsReceiving(true);
+    
+    // Store current aircraft config for this session
+    setCurrentCallsign(customCallsign || 'N12345');
+    setCurrentAircraftType(selectedAircraftType || 'Cessna 172');
 
     try {
-      const initialContact = await apiService.getATCInitialContact(scenario.id);
+      // For free_class mode, don't get initial contact - pilot initiates
+      if (scenario.id === 'free_class') {
+        const welcomeMessage: Message = {
+          id: `msg_${Date.now()}`,
+          type: 'system',
+          text: `Clase Libre iniciada. Tu aeronave: ${selectedAircraftType || 'Cessna 172'}, Matrícula: ${customCallsign || 'N12345'}. Inicia la comunicación con cualquier instalación ATC (Ground, Tower, Approach, Center).`,
+          timestamp: new Date(),
+        };
+        setMessages([welcomeMessage]);
+        setIsReceiving(false);
+        return;
+      }
+
+      const initialContact = await apiService.getATCInitialContact(
+        scenario.id, 
+        customCallsign || undefined, 
+        selectedAircraftType || undefined
+      );
       
       const atcMessage: Message = {
         id: `msg_${Date.now()}`,
         type: 'atc',
-        text: initialContact.message,
+        text: initialContact.initial_message || initialContact.message,
         timestamp: new Date(),
       };
       setMessages([atcMessage]);
@@ -370,7 +439,9 @@ export default function PracticeScreen() {
       const response = await apiService.simulateATC(
         selectedScenario.id,
         pilotMessage.text,
-        sessionId
+        sessionId,
+        currentCallsign || customCallsign || undefined,
+        currentAircraftType || selectedAircraftType || undefined
       );
 
       setIsTransmitting(false);
@@ -970,16 +1041,24 @@ export default function PracticeScreen() {
           <Text style={styles.simulatorTitle}>Simulador ATC</Text>
         </View>
 
-        {/* Aircraft Info */}
-        <View style={styles.aircraftCard}>
+        {/* Aircraft Configuration Card */}
+        <TouchableOpacity 
+          style={styles.aircraftCard}
+          onPress={() => setShowAircraftSetup(true)}
+          activeOpacity={0.8}
+        >
           <View style={styles.aircraftIcon}>
             <Ionicons name="airplane" size={40} color="#2196F3" />
           </View>
           <View style={styles.aircraftInfo}>
-            <Text style={styles.aircraftName}>Cessna 172 Skyhawk</Text>
-            <Text style={styles.aircraftCallsign}>Callsign: N12345</Text>
+            <Text style={styles.aircraftName}>{selectedAircraftType || 'Cessna 172'}</Text>
+            <Text style={styles.aircraftCallsign}>Matrícula: {customCallsign || 'N12345'}</Text>
           </View>
-        </View>
+          <View style={styles.editBadge}>
+            <Ionicons name="pencil" size={16} color="#2196F3" />
+            <Text style={styles.editText}>Editar</Text>
+          </View>
+        </TouchableOpacity>
 
         {/* Scenarios */}
         <Text style={styles.sectionTitle}>Selecciona un Escenario</Text>
@@ -991,38 +1070,40 @@ export default function PracticeScreen() {
             {scenarios.map((scenario) => (
               <TouchableOpacity
                 key={scenario.id}
-                style={styles.scenarioCard}
+                style={[styles.scenarioCard, scenario.id === 'free_class' && styles.freeClassCard]}
                 onPress={() => startSimulation(scenario)}
                 activeOpacity={0.8}
               >
                 <View style={styles.scenarioHeader}>
-                  <View style={[styles.phaseIcon, { backgroundColor: getPhaseColor(scenario.phase) + '30' }]}>
+                  <View style={[styles.phaseIcon, { backgroundColor: (scenario.id === 'free_class' ? '#9C27B0' : getPhaseColor(scenario.phase)) + '30' }]}>
                     <Ionicons 
-                      name={getPhaseIcon(scenario.phase) as any} 
+                      name={scenario.id === 'free_class' ? 'infinite' : getPhaseIcon(scenario.phase) as any} 
                       size={24} 
-                      color={getPhaseColor(scenario.phase)} 
+                      color={scenario.id === 'free_class' ? '#9C27B0' : getPhaseColor(scenario.phase)} 
                     />
                   </View>
-                  <View style={[styles.phaseBadge, { backgroundColor: getPhaseColor(scenario.phase) }]}>
-                    <Text style={styles.phaseText}>{scenario.phase.toUpperCase()}</Text>
+                  <View style={[styles.phaseBadge, { backgroundColor: scenario.id === 'free_class' ? '#9C27B0' : getPhaseColor(scenario.phase) }]}>
+                    <Text style={styles.phaseText}>{scenario.id === 'free_class' ? 'LIBRE' : scenario.phase.toUpperCase()}</Text>
                   </View>
                 </View>
                 
                 <Text style={styles.scenarioName}>{scenario.name}</Text>
                 <Text style={styles.scenarioDescription}>{scenario.description}</Text>
                 
-                <View style={styles.scenarioDetails}>
-                  <View style={styles.scenarioDetail}>
-                    <Ionicons name="location" size={14} color="#888" />
-                    <Text style={styles.scenarioDetailText}>{scenario.airport}</Text>
+                {scenario.id !== 'free_class' && (
+                  <View style={styles.scenarioDetails}>
+                    <View style={styles.scenarioDetail}>
+                      <Ionicons name="location" size={14} color="#888" />
+                      <Text style={styles.scenarioDetailText}>{scenario.airport}</Text>
+                    </View>
+                    <View style={styles.scenarioDetail}>
+                      <Ionicons name="radio-outline" size={14} color="#888" />
+                      <Text style={styles.scenarioDetailText}>{scenario.frequency} MHz</Text>
+                    </View>
                   </View>
-                  <View style={styles.scenarioDetail}>
-                    <Ionicons name="radio-outline" size={14} color="#888" />
-                    <Text style={styles.scenarioDetailText}>{scenario.frequency} MHz</Text>
-                  </View>
-                </View>
+                )}
 
-                <View style={styles.startButton}>
+                <View style={[styles.startButton, scenario.id === 'free_class' && styles.freeClassButton]}>
                   <Ionicons name="play" size={18} color="#fff" />
                   <Text style={styles.startButtonText}>Iniciar Simulación</Text>
                 </View>
@@ -1031,6 +1112,70 @@ export default function PracticeScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Aircraft Setup Modal */}
+      <Modal
+        visible={showAircraftSetup}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowAircraftSetup(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.setupModal}>
+            <View style={styles.setupModalHeader}>
+              <Text style={styles.setupModalTitle}>Configurar Aeronave</Text>
+              <TouchableOpacity onPress={() => setShowAircraftSetup(false)}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.setupField}>
+              <Text style={styles.setupLabel}>Matrícula</Text>
+              <TextInput
+                style={styles.setupInput}
+                value={customCallsign}
+                onChangeText={setCustomCallsign}
+                placeholder="Ej: N12345"
+                placeholderTextColor="#666"
+                autoCapitalize="characters"
+                maxLength={10}
+              />
+              <Text style={styles.setupHint}>Formato: N seguido de números (ej: N7890AB)</Text>
+            </View>
+
+            <View style={styles.setupField}>
+              <Text style={styles.setupLabel}>Tipo de Aeronave</Text>
+              <View style={styles.aircraftTypesGrid}>
+                {aircraftTypes.map((aircraft) => (
+                  <TouchableOpacity
+                    key={aircraft.type}
+                    style={[
+                      styles.aircraftTypeBtn,
+                      selectedAircraftType === aircraft.type && styles.aircraftTypeBtnActive
+                    ]}
+                    onPress={() => setSelectedAircraftType(aircraft.type)}
+                  >
+                    <Text style={[
+                      styles.aircraftTypeText,
+                      selectedAircraftType === aircraft.type && styles.aircraftTypeTextActive
+                    ]}>
+                      {aircraft.type}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={styles.setupSaveBtn}
+              onPress={() => setShowAircraftSetup(false)}
+            >
+              <Ionicons name="checkmark" size={20} color="#fff" />
+              <Text style={styles.setupSaveBtnText}>Guardar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 
@@ -1041,11 +1186,11 @@ export default function PracticeScreen() {
       <View style={styles.cockpitHeader}>
         <View style={styles.frequencyDisplay}>
           <Text style={styles.frequencyLabel}>COM1</Text>
-          <Text style={styles.frequencyValue}>{selectedScenario?.frequency}</Text>
+          <Text style={styles.frequencyValue}>{selectedScenario?.frequency || 'Variable'}</Text>
         </View>
         <View style={styles.facilityInfo}>
-          <Text style={styles.facilityName}>{selectedScenario?.atc_facility}</Text>
-          <Text style={styles.callsignText}>N12345</Text>
+          <Text style={styles.facilityName}>{selectedScenario?.atc_facility || 'ATC'}</Text>
+          <Text style={styles.callsignText}>{currentCallsign || customCallsign || 'N12345'}</Text>
         </View>
         <TouchableOpacity style={styles.endButton} onPress={endSimulation}>
           <Ionicons name="close" size={24} color="#F44336" />
@@ -2130,6 +2275,115 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   closeEvaluationText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  // Aircraft Setup Modal
+  editBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2196F320',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    gap: 4,
+  },
+  editText: {
+    color: '#2196F3',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  freeClassCard: {
+    borderWidth: 2,
+    borderColor: '#9C27B0',
+    backgroundColor: '#1A1A2E',
+  },
+  freeClassButton: {
+    backgroundColor: '#9C27B0',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'flex-end',
+  },
+  setupModal: {
+    backgroundColor: '#1E1E1E',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  setupModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  setupModalTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  setupField: {
+    marginBottom: 20,
+  },
+  setupLabel: {
+    color: '#888',
+    fontSize: 14,
+    marginBottom: 8,
+    fontWeight: '600',
+  },
+  setupInput: {
+    backgroundColor: '#2A2A2A',
+    borderRadius: 12,
+    padding: 16,
+    color: '#fff',
+    fontSize: 18,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    letterSpacing: 2,
+  },
+  setupHint: {
+    color: '#666',
+    fontSize: 12,
+    marginTop: 6,
+  },
+  aircraftTypesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  aircraftTypeBtn: {
+    backgroundColor: '#2A2A2A',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  aircraftTypeBtnActive: {
+    borderColor: '#2196F3',
+    backgroundColor: '#2196F320',
+  },
+  aircraftTypeText: {
+    color: '#888',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  aircraftTypeTextActive: {
+    color: '#2196F3',
+  },
+  setupSaveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#4CAF50',
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 10,
+    gap: 8,
+  },
+  setupSaveBtnText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',

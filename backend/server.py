@@ -1093,8 +1093,44 @@ ATC_SCENARIOS = {
         "initial_situation": "You've become disoriented after encountering unexpected weather. Visibility has dropped and you're unsure of your position. Your aircraft is a Cessna 172 with callsign N12345.",
         "atc_facility": "Los Angeles Center",
         "frequency": "134.500"
+    },
+    "free_class": {
+        "name": "Clase Libre",
+        "description": "Practica cualquier escenario - el ATC se adapta a tu comunicación",
+        "phase": "free",
+        "airport": "Variable",
+        "initial_situation": "Free practice mode. The pilot will initiate contact and the ATC will adapt to whatever facility or scenario the pilot communicates with.",
+        "atc_facility": "ATC (Variable)",
+        "frequency": "Variable"
     }
 }
+
+# Special system prompt for free class mode
+ATC_FREE_CLASS_PROMPT = """You are a highly realistic Air Traffic Controller (ATC) simulator for free practice. Your role is to ADAPT to whatever the pilot says.
+
+## CRITICAL RULES:
+1. When the pilot calls ANY facility (Ground, Tower, Approach, Center, Traffic), YOU BECOME THAT FACILITY
+2. NEVER say "I'm not that facility" - always adapt and respond appropriately
+3. If pilot says "Miami Ground", you ARE Miami Ground. If they say "LAX Tower", you ARE LAX Tower.
+4. Track all clearances you give and NEVER contradict yourself
+5. If pilot reads back correctly = "readback correct". If incorrect, correct them.
+6. Respond professionally with standard FAA/ICAO phraseology
+7. Keep responses under 35 words typically
+
+## AIRCRAFT INFO:
+Type: {aircraft_type}
+Callsign: {callsign} (phonetic: {callsign_phonetic})
+
+## YOUR BEHAVIOR:
+- Wait for pilot to initiate contact
+- Identify which facility they're calling and BECOME that facility
+- Use realistic altimeter settings (e.g., "altimeter two niner niner two")
+- Include squawk codes when appropriate
+- Reference winds for takeoff/landing
+- Use proper phonetic alphabet and number pronunciation
+
+## REMEMBER:
+You adapt to the pilot's scenario. If they contact Ground for taxi, handle taxi clearances. If they contact Tower for takeoff, handle departure clearances. Be flexible but always professional and consistent."""
 
 ATC_SYSTEM_PROMPT = """You are a highly realistic Air Traffic Controller (ATC) simulator for training pilots. Your primary goal is to maintain PERFECT CONSISTENCY and help pilots practice realistic radio communications.
 
@@ -1292,22 +1328,31 @@ async def simulate_atc(request: ATCSimulationRequest):
         config = atc_session_configs[session_key]
         
         if session_key not in atc_sessions:
-            # Build dynamic situation with callsign
-            situation = scenario["initial_situation"].replace(
-                "Your aircraft is a Cessna 172 with callsign N12345",
-                f"Your aircraft is a {config['aircraft_type']} with callsign {config['callsign']}"
-            ).replace("N12345", config['callsign'])
-            
-            system_message = ATC_SYSTEM_PROMPT.format(
-                airport=scenario["airport"],
-                atc_facility=scenario["atc_facility"],
-                frequency=scenario["frequency"],
-                phase=scenario["phase"],
-                initial_situation=situation,
-                aircraft_type=config["aircraft_type"],
-                callsign=config["callsign"],
-                callsign_phonetic=config["callsign_phonetic"]
-            )
+            # Check if this is a free class scenario
+            if request.scenario_id == "free_class":
+                # Use the free class prompt
+                system_message = ATC_FREE_CLASS_PROMPT.format(
+                    aircraft_type=config["aircraft_type"],
+                    callsign=config["callsign"],
+                    callsign_phonetic=config["callsign_phonetic"]
+                )
+            else:
+                # Build dynamic situation with callsign for regular scenarios
+                situation = scenario["initial_situation"].replace(
+                    "Your aircraft is a Cessna 172 with callsign N12345",
+                    f"Your aircraft is a {config['aircraft_type']} with callsign {config['callsign']}"
+                ).replace("N12345", config['callsign'])
+                
+                system_message = ATC_SYSTEM_PROMPT.format(
+                    airport=scenario["airport"],
+                    atc_facility=scenario["atc_facility"],
+                    frequency=scenario["frequency"],
+                    phase=scenario["phase"],
+                    initial_situation=situation,
+                    aircraft_type=config["aircraft_type"],
+                    callsign=config["callsign"],
+                    callsign_phonetic=config["callsign_phonetic"]
+                )
             
             chat = LlmChat(
                 api_key=api_key,
