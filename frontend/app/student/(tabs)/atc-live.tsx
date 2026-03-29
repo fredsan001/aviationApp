@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -6,12 +6,12 @@ import {
   ScrollView,
   TouchableOpacity,
   Modal,
-  ActivityIndicator,
+  Linking,
+  Alert,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { WebView } from 'react-native-webview';
 
 interface LiveFeed {
   id: string;
@@ -96,8 +96,6 @@ const getTypeLabel = (type: LiveFeed['type']) => {
 export default function ATCLiveScreen() {
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [selectedFeed, setSelectedFeed] = useState<LiveFeed | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const webViewRef = useRef<WebView>(null);
 
   const filteredFeeds = selectedType 
     ? LIVE_FEEDS.filter(feed => feed.type === selectedType)
@@ -105,12 +103,27 @@ export default function ATCLiveScreen() {
 
   const handleOpenFeed = (feed: LiveFeed) => {
     setSelectedFeed(feed);
-    setIsLoading(true);
   };
 
   const handleCloseFeed = () => {
     setSelectedFeed(null);
-    setIsLoading(false);
+  };
+
+  const handleOpenInBrowser = async () => {
+    if (!selectedFeed) return;
+    
+    try {
+      const supported = await Linking.canOpenURL(selectedFeed.url);
+      if (supported) {
+        await Linking.openURL(selectedFeed.url);
+      } else {
+        Alert.alert('Error', 'No se puede abrir el enlace');
+      }
+    } catch (error) {
+      console.error('Error opening URL:', error);
+      Alert.alert('Error', 'No se pudo abrir la transmisión');
+    }
+    handleCloseFeed();
   };
 
   const types = ['tower', 'approach', 'center', 'ground'] as const;
@@ -214,50 +227,77 @@ export default function ATCLiveScreen() {
         </View>
       </ScrollView>
 
-      {/* WebView Modal for Live Feed */}
+      {/* Confirmation Modal */}
       <Modal
         visible={selectedFeed !== null}
-        animationType="slide"
+        transparent
+        animationType="fade"
         onRequestClose={handleCloseFeed}
       >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={handleCloseFeed} style={styles.closeButton}>
-              <Ionicons name="close" size={28} color="#fff" />
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmModalContent}>
+            {/* Header with close button */}
+            <TouchableOpacity 
+              style={styles.modalCloseButton} 
+              onPress={handleCloseFeed}
+              hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+            >
+              <Ionicons name="close-circle" size={32} color="#666" />
             </TouchableOpacity>
-            <View style={styles.modalTitleContainer}>
-              <Text style={styles.modalTitle}>{selectedFeed?.name}</Text>
-              <Text style={styles.modalSubtitle}>{selectedFeed?.location}</Text>
+
+            {/* Feed Info */}
+            <View style={styles.feedInfoContainer}>
+              <View style={[styles.feedTypeIconLarge, { backgroundColor: selectedFeed ? getTypeColor(selectedFeed.type) + '30' : '#333' }]}>
+                <Ionicons 
+                  name={
+                    selectedFeed?.type === 'tower' ? 'business' :
+                    selectedFeed?.type === 'approach' ? 'airplane' :
+                    selectedFeed?.type === 'center' ? 'navigate' : 'disc'
+                  } 
+                  size={40} 
+                  color={selectedFeed ? getTypeColor(selectedFeed.type) : '#888'} 
+                />
+              </View>
+              
+              <Text style={styles.feedNameLarge}>{selectedFeed?.name}</Text>
+              <Text style={styles.feedLocationLarge}>{selectedFeed?.location}</Text>
+              
+              <View style={styles.frequencyBadgeLarge}>
+                <Ionicons name="radio" size={16} color="#4CAF50" />
+                <Text style={styles.frequencyTextLarge}>{selectedFeed?.frequency}</Text>
+              </View>
             </View>
-            <View style={[styles.liveIndicatorModal, { backgroundColor: selectedFeed ? getTypeColor(selectedFeed.type) : '#888' }]}>
-              <View style={styles.liveDot} />
-              <Text style={styles.liveText}>EN VIVO</Text>
+
+            {/* Live Badge */}
+            <View style={[styles.liveBadgeLarge, { backgroundColor: selectedFeed ? getTypeColor(selectedFeed.type) : '#888' }]}>
+              <View style={styles.liveDotLarge} />
+              <Text style={styles.liveTextLarge}>TRANSMISIÓN EN VIVO</Text>
+            </View>
+
+            {/* Info Text */}
+            <Text style={styles.modalInfoText}>
+              Se abrirá en tu navegador para una mejor experiencia de audio.
+            </Text>
+
+            {/* Action Buttons */}
+            <View style={styles.modalButtonsContainer}>
+              <TouchableOpacity 
+                style={styles.cancelButton}
+                onPress={handleCloseFeed}
+              >
+                <Text style={styles.cancelButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.openButton, { backgroundColor: selectedFeed ? getTypeColor(selectedFeed.type) : '#2196F3' }]}
+                onPress={handleOpenInBrowser}
+              >
+                <Ionicons name="open-outline" size={20} color="#fff" />
+                <Text style={styles.openButtonText}>Abrir y Escuchar</Text>
+              </TouchableOpacity>
             </View>
           </View>
-          
-          {isLoading && (
-            <View style={styles.loadingOverlay}>
-              <ActivityIndicator size="large" color="#2196F3" />
-              <Text style={styles.loadingText}>Conectando...</Text>
-            </View>
-          )}
-          
-          {selectedFeed && (
-            <WebView
-              ref={webViewRef}
-              source={{ uri: selectedFeed.url }}
-              style={styles.webView}
-              onLoadStart={() => setIsLoading(true)}
-              onLoadEnd={() => setIsLoading(false)}
-              allowsInlineMediaPlayback={true}
-              mediaPlaybackRequiresUserAction={false}
-              javaScriptEnabled={true}
-              domStorageEnabled={true}
-              startInLoadingState={true}
-              scalesPageToFit={true}
-            />
-          )}
-        </SafeAreaView>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -412,62 +452,125 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
   },
-  // Modal styles
-  modalContainer: {
+  // Confirmation Modal Styles
+  modalOverlay: {
     flex: 1,
-    backgroundColor: '#121212',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#1E1E1E',
-    borderBottomWidth: 1,
-    borderBottomColor: '#333',
-  },
-  closeButton: {
-    padding: 4,
-  },
-  modalTitleContainer: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  modalTitle: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  modalSubtitle: {
-    color: '#888',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  liveIndicatorModal: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    gap: 6,
-  },
-  webView: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  loadingOverlay: {
-    position: 'absolute',
-    top: 80,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(18, 18, 18, 0.9)',
+    padding: 24,
+  },
+  confirmModalContent: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 24,
+    padding: 24,
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  modalCloseButton: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
     zIndex: 10,
   },
-  loadingText: {
+  feedInfoContainer: {
+    alignItems: 'center',
+    marginTop: 16,
+    marginBottom: 20,
+  },
+  feedTypeIconLarge: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  feedNameLarge: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  feedLocationLarge: {
     color: '#888',
-    marginTop: 12,
     fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  frequencyBadgeLarge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#4CAF5020',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 6,
+  },
+  frequencyTextLarge: {
+    color: '#4CAF50',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  liveBadgeLarge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    gap: 8,
+    marginBottom: 16,
+  },
+  liveDotLarge: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#fff',
+  },
+  liveTextLarge: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  modalInfoText: {
+    color: '#888',
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  modalButtonsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: '#333',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  openButton: {
+    flex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 8,
+  },
+  openButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });
