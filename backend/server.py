@@ -508,7 +508,13 @@ async def get_videos(category: Optional[str] = None):
     query = {}
     if category:
         query["category"] = category
-    videos = await db.videos.find(query).sort("created_at", -1).to_list(1000)
+    # Use projection to fetch only necessary fields for listing
+    projection = {
+        "id": 1, "title": 1, "description": 1, "category": 1, "categories": 1,
+        "duration": 1, "created_at": 1, "is_processing": 1, "processing_status": 1,
+        "processing_progress": 1, "transcription_status": 1, "_id": 0
+    }
+    videos = await db.videos.find(query, projection).sort("created_at", -1).to_list(500)
     return serialize_doc(videos)
 
 @api_router.get("/videos/{video_id}")
@@ -835,7 +841,8 @@ async def create_access_code(code_data: AccessCodeCreate):
 
 @api_router.get("/access-codes", response_model=List[AccessCode])
 async def get_access_codes():
-    codes = await db.access_codes.find().to_list(1000)
+    # Use projection for listing fields only
+    codes = await db.access_codes.find().to_list(500)
     return [AccessCode(**code) for code in codes]
 
 @api_router.post("/access-codes/verify")
@@ -2102,16 +2109,27 @@ async def get_all_students():
     # Get all access codes (excluding admin codes)
     codes = await db.access_codes.find({"is_active": True}).to_list(100)
     
+    # Filter out admin codes first
+    student_codes = [code for code in codes if 'admin' not in code.get('code', '').lower()]
+    
+    # Batch query: Get all progress records for all students in ONE query
+    all_access_codes = [code['code'] for code in student_codes]
+    all_progress = await db.user_progress.find({"access_code": {"$in": all_access_codes}}).to_list(10000)
+    
+    # Group progress by access_code
+    progress_by_code = {}
+    for p in all_progress:
+        ac = p.get('access_code')
+        if ac not in progress_by_code:
+            progress_by_code[ac] = []
+        progress_by_code[ac].append(p)
+    
     students = []
-    for code in codes:
-        # Skip admin codes
-        if 'admin' in code.get('code', '').lower():
-            continue
-            
+    for code in student_codes:
         access_code = code['code']
         
-        # Get progress for this student
-        progress_list = await db.user_progress.find({"access_code": access_code}).to_list(1000)
+        # Get progress from the pre-fetched map
+        progress_list = progress_by_code.get(access_code, [])
         
         # Count watched videos
         watched_count = len([p for p in progress_list if p.get('watched_count', 0) > 0])
@@ -2145,10 +2163,15 @@ async def get_student_progress_detail(access_code: str):
     # Get all progress entries
     progress_list = await db.user_progress.find({"access_code": access_code}).sort("last_watched_at", -1).to_list(1000)
     
+    # Batch query: Get all videos in ONE query
+    video_ids = [p['video_id'] for p in progress_list]
+    videos = await db.videos.find({"id": {"$in": video_ids}}, {"id": 1, "title": 1, "duration": 1}).to_list(1000)
+    video_map = {v['id']: v for v in videos}
+    
     # Get video details for each progress entry
     result = []
     for progress in progress_list:
-        video = await db.videos.find_one({"id": progress['video_id']})
+        video = video_map.get(progress['video_id'])
         if video:
             result.append({
                 "video_id": progress['video_id'],
@@ -2163,16 +2186,17 @@ async def get_student_progress_detail(access_code: str):
     
     # Get learning path progress
     path = await db.learning_path.find().sort("order", 1).to_list(100)
+    
+    # Create progress map from already fetched progress_list
+    progress_map = {p['video_id']: p for p in progress_list}
+    
     path_progress = {
         "total_videos": len(path),
         "completed_videos": 0
     }
     
     for item in path:
-        progress = await db.user_progress.find_one({
-            "access_code": access_code, 
-            "video_id": item['video_id']
-        })
+        progress = progress_map.get(item['video_id'])
         if progress and progress.get('watched_count', 0) > 0:
             path_progress['completed_videos'] += 1
     
