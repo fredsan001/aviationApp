@@ -275,6 +275,16 @@ export const apiService = {
     const response = await api.put(`/access-codes/${codeId}/release-device`);
     return response.data;
   },
+  
+  // Admin - Student Progress
+  getStudents: async () => {
+    const response = await api.get('/admin/students');
+    return response.data;
+  },
+  getStudentProgress: async (accessCode: string) => {
+    const response = await api.get(`/admin/students/${accessCode}/progress`);
+    return response.data;
+  },
 };
 
 export default api;

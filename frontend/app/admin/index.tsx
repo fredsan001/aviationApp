@@ -38,6 +38,13 @@ export default function AdminDashboard() {
       color: '#E91E63',
     },
     {
+      icon: 'people',
+      title: 'Student Progress',
+      description: 'View student activity and progress',
+      route: '/admin/students',
+      color: '#00BCD4',
+    },
+    {
       icon: 'key',
       title: 'Access Codes',
       description: 'Create and manage client access codes',
@@ -56,7 +63,7 @@ export default function AdminDashboard() {
       title: 'Settings',
       description: 'Help content & intro video',
       route: '/admin/settings',
-      color: '#00BCD4',
+      color: '#607D8B',
     },
   ];
 

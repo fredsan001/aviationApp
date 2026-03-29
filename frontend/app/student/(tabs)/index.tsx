@@ -407,14 +407,37 @@ export default function StudentVideos() {
         </>
       )}
 
-      {/* Path Mode Info */}
+      {/* Path Mode Info with Progress Bar */}
       {viewMode === 'path' && pathVideos.length > 0 && (
-        <View style={styles.pathInfoBar}>
-          <Ionicons name="navigate" size={16} color="#E91E63" />
-          <Text style={styles.pathInfoText}>
-            Ruta de Aprendizaje • {pathVideos.length} videos
-          </Text>
+        <View style={styles.pathInfoContainer}>
+          <View style={styles.pathInfoBar}>
+            <Ionicons name="navigate" size={16} color="#E91E63" />
+            <Text style={styles.pathInfoText}>
+              Ruta • {pathVideos.filter(v => watchedVideoIds.has(v.id) || (v.watched_count && v.watched_count > 0)).length}/{pathVideos.length} completados
+            </Text>
+          </View>
+          <View style={styles.pathProgressBar}>
+            <View 
+              style={[
+                styles.pathProgressFill, 
+                { 
+                  width: `${(pathVideos.filter(v => watchedVideoIds.has(v.id) || (v.watched_count && v.watched_count > 0)).length / pathVideos.length) * 100}%` 
+                }
+              ]} 
+            />
+          </View>
         </View>
+      )}
+
+      {/* Review Button - Only in "All" mode when there are watched videos */}
+      {viewMode === 'all' && watchedVideoIds.size > 0 && (
+        <TouchableOpacity
+          style={styles.reviewButton}
+          onPress={() => router.push('/student/review')}
+        >
+          <Ionicons name="repeat" size={18} color="#fff" />
+          <Text style={styles.reviewButtonText}>Repaso ({watchedVideoIds.size} videos)</Text>
+        </TouchableOpacity>
       )}
 
       {/* Videos */}
@@ -559,19 +582,49 @@ const styles = StyleSheet.create({
   categoryChipTextActive: {
     color: '#fff',
   },
+  pathInfoContainer: {
+    marginHorizontal: 16,
+    marginVertical: 8,
+  },
   pathInfoBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#1A1A2E',
     paddingVertical: 10,
-    marginHorizontal: 16,
-    marginVertical: 8,
-    borderRadius: 8,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
     gap: 8,
   },
   pathInfoText: {
     color: '#E91E63',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  pathProgressBar: {
+    height: 6,
+    backgroundColor: '#2A2A2A',
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    overflow: 'hidden',
+  },
+  pathProgressFill: {
+    height: '100%',
+    backgroundColor: '#E91E63',
+  },
+  reviewButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#9C27B0',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  reviewButtonText: {
+    color: '#fff',
     fontSize: 14,
     fontWeight: '600',
   },

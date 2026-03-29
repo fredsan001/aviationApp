@@ -1853,6 +1853,93 @@ async def get_learning_path_videos(access_code: str):
     
     return result
 
+# ============== Admin - Student Progress History ==============
+
+@api_router.get("/admin/students")
+async def get_all_students():
+    """Get all students with their progress summary"""
+    # Get all access codes (excluding admin codes)
+    codes = await db.access_codes.find({"is_active": True}).to_list(100)
+    
+    students = []
+    for code in codes:
+        # Skip admin codes
+        if 'admin' in code.get('code', '').lower():
+            continue
+            
+        access_code = code['code']
+        
+        # Get progress for this student
+        progress_list = await db.user_progress.find({"access_code": access_code}).to_list(1000)
+        
+        # Count watched videos
+        watched_count = len([p for p in progress_list if p.get('watched_count', 0) > 0])
+        ready_count = len([p for p in progress_list if p.get('ready_for_evaluation', False)])
+        total_watches = sum([p.get('watched_count', 0) for p in progress_list])
+        
+        # Get last activity
+        last_activity = None
+        if progress_list:
+            dates = [p.get('last_watched_at') or p.get('updated_at') for p in progress_list if p.get('last_watched_at') or p.get('updated_at')]
+            if dates:
+                last_activity = max(dates)
+        
+        students.append({
+            "code_id": code['id'],
+            "access_code": access_code,
+            "client_name": code.get('client_name', 'Unknown'),
+            "watched_videos": watched_count,
+            "ready_for_evaluation": ready_count,
+            "total_views": total_watches,
+            "last_activity": last_activity,
+            "device_registered": code.get('registered_device_id') is not None,
+            "created_at": code.get('created_at')
+        })
+    
+    return students
+
+@api_router.get("/admin/students/{access_code}/progress")
+async def get_student_progress_detail(access_code: str):
+    """Get detailed progress for a specific student"""
+    # Get all progress entries
+    progress_list = await db.user_progress.find({"access_code": access_code}).sort("last_watched_at", -1).to_list(1000)
+    
+    # Get video details for each progress entry
+    result = []
+    for progress in progress_list:
+        video = await db.videos.find_one({"id": progress['video_id']})
+        if video:
+            result.append({
+                "video_id": progress['video_id'],
+                "video_title": video.get('title', 'Unknown'),
+                "video_duration": video.get('duration', 0),
+                "watched_count": progress.get('watched_count', 0),
+                "completed": progress.get('completed', False),
+                "ready_for_evaluation": progress.get('ready_for_evaluation', False),
+                "last_watched_at": progress.get('last_watched_at'),
+                "last_position": progress.get('last_position', 0)
+            })
+    
+    # Get learning path progress
+    path = await db.learning_path.find().sort("order", 1).to_list(100)
+    path_progress = {
+        "total_videos": len(path),
+        "completed_videos": 0
+    }
+    
+    for item in path:
+        progress = await db.user_progress.find_one({
+            "access_code": access_code, 
+            "video_id": item['video_id']
+        })
+        if progress and progress.get('watched_count', 0) > 0:
+            path_progress['completed_videos'] += 1
+    
+    return {
+        "videos": result,
+        "path_progress": path_progress
+    }
+
 # Include the router in the main app
 app.include_router(api_router)
 
