@@ -452,8 +452,14 @@ export default function PracticeScreen() {
     setReplayCount(prev => prev + 1);
 
     try {
+      // Cleanup previous sound
       if (soundRef.current) {
-        await soundRef.current.unloadAsync();
+        try {
+          await soundRef.current.unloadAsync();
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+        soundRef.current = null;
       }
 
       const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
@@ -468,27 +474,35 @@ export default function PracticeScreen() {
       );
       soundRef.current = sound;
 
-      // Set up playback status update to stop at end_time
+      // Calculate duration and track finish state
       const duration = (listeningSegment.end_time - listeningSegment.start_time) * 1000;
+      let hasFinished = false;
       
+      // Set up playback status update to stop at end_time
       sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded) {
+        if (status.isLoaded && !hasFinished) {
           const currentPos = status.positionMillis;
           const startPos = listeningSegment.start_time * 1000;
           
           if (currentPos >= startPos + duration || status.didJustFinish) {
-            sound.stopAsync();
+            hasFinished = true;
             setIsPlaying(false);
+            // Don't call stopAsync here - it causes the seeking interrupted error
           }
         }
       });
 
       await sound.playAsync();
 
-      // Auto-stop after duration
+      // Auto-stop after duration with proper error handling
       setTimeout(async () => {
-        if (soundRef.current) {
-          await soundRef.current.stopAsync();
+        if (soundRef.current && !hasFinished) {
+          hasFinished = true;
+          try {
+            await soundRef.current.stopAsync();
+          } catch (e) {
+            // Ignore seeking interrupted errors
+          }
           setIsPlaying(false);
         }
       }, duration + 500);
