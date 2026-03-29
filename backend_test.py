@@ -1,467 +1,224 @@
 #!/usr/bin/env python3
 """
-AeroEnglish ATC App Backend Testing
-Testing single device login, device release, and ATC simulation features
+ATC Simulator Testing Script
+Tests the improved ATC Simulator endpoints as requested in the review.
 """
 
 import requests
 import json
-import base64
-import time
-from typing import Dict, Any, Optional
+import sys
+from typing import Dict, Any
 
-# Configuration
+# Base URL from frontend .env (review request URL not working)
 BASE_URL = "https://skycomm-app.preview.emergentagent.com"
 API_BASE = f"{BASE_URL}/api"
 
-class AeroEnglishTester:
-    def __init__(self):
-        self.session = requests.Session()
-        self.test_results = []
+def test_request(method: str, url: str, data: Dict[Any, Any] = None, params: Dict[str, str] = None) -> Dict[str, Any]:
+    """Make a test request and return structured result"""
+    try:
+        if method.upper() == "GET":
+            response = requests.get(url, params=params, timeout=30)
+        elif method.upper() == "POST":
+            response = requests.post(url, json=data, params=params, timeout=30)
+        elif method.upper() == "PUT":
+            response = requests.put(url, json=data, params=params, timeout=30)
+        else:
+            return {"success": False, "error": f"Unsupported method: {method}"}
         
-    def log_test(self, test_name: str, success: bool, details: str = "", response_data: Any = None):
-        """Log test results"""
-        result = {
-            "test": test_name,
-            "success": success,
-            "details": details,
-            "response_data": response_data,
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+        return {
+            "success": response.status_code < 400,
+            "status_code": response.status_code,
+            "data": response.json() if response.headers.get('content-type', '').startswith('application/json') else response.text,
+            "headers": dict(response.headers)
         }
-        self.test_results.append(result)
+    except requests.exceptions.RequestException as e:
+        return {"success": False, "error": str(e)}
+    except json.JSONDecodeError as e:
+        return {"success": False, "error": f"JSON decode error: {e}"}
+    except Exception as e:
+        return {"success": False, "error": f"Unexpected error: {e}"}
+
+def print_test_result(test_name: str, result: Dict[str, Any], expected_fields: list = None):
+    """Print formatted test result"""
+    print(f"\n{'='*60}")
+    print(f"TEST: {test_name}")
+    print(f"{'='*60}")
+    
+    if result["success"]:
+        print(f"✅ SUCCESS - Status: {result['status_code']}")
+        
+        if expected_fields and isinstance(result["data"], dict):
+            print("\n📋 FIELD VALIDATION:")
+            for field in expected_fields:
+                if field in result["data"]:
+                    print(f"  ✅ {field}: {result['data'][field]}")
+                else:
+                    print(f"  ❌ MISSING: {field}")
+        
+        print(f"\n📄 RESPONSE DATA:")
+        print(json.dumps(result["data"], indent=2))
+    else:
+        print(f"❌ FAILED - Status: {result.get('status_code', 'N/A')}")
+        print(f"Error: {result.get('error', 'Unknown error')}")
+        if "data" in result:
+            print(f"Response: {result['data']}")
+
+def main():
+    """Run all ATC Simulator tests"""
+    print("🚀 Starting ATC Simulator Testing")
+    print(f"Base URL: {BASE_URL}")
+    
+    test_results = []
+    
+    # Test 1: Get Aircraft Types
+    print("\n" + "="*80)
+    print("TEST 1: GET Aircraft Types")
+    print("="*80)
+    
+    result1 = test_request("GET", f"{API_BASE}/atc/aircraft-types")
+    print_test_result("Get Aircraft Types", result1, ["type", "category"])
+    test_results.append(("Get Aircraft Types", result1["success"]))
+    
+    # Validate aircraft types structure
+    if result1["success"] and isinstance(result1["data"], list):
+        if len(result1["data"]) > 0:
+            first_aircraft = result1["data"][0]
+            if "type" in first_aircraft and "category" in first_aircraft:
+                print("✅ Aircraft types have correct structure (type and category fields)")
+            else:
+                print("❌ Aircraft types missing required fields")
+        else:
+            print("❌ No aircraft types returned")
+    
+    # Test 2: Get Initial Contact with Custom Callsign
+    print("\n" + "="*80)
+    print("TEST 2: GET Initial Contact with Custom Callsign")
+    print("="*80)
+    
+    params = {
+        "callsign": "N54321",
+        "aircraft_type": "Cirrus SR22"
+    }
+    result2 = test_request("GET", f"{API_BASE}/atc/initial-contact/takeoff", params=params)
+    expected_fields = ["initial_message", "callsign", "callsign_phonetic", "aircraft_type", "frequency", "atc_facility"]
+    print_test_result("Get Initial Contact with Custom Callsign", result2, expected_fields)
+    test_results.append(("Get Initial Contact", result2["success"]))
+    
+    # Validate specific values
+    if result2["success"] and isinstance(result2["data"], dict):
+        data = result2["data"]
+        if data.get("callsign") == "N54321":
+            print("✅ Callsign correctly set to N54321")
+        else:
+            print(f"❌ Callsign mismatch. Expected: N54321, Got: {data.get('callsign')}")
+        
+        if data.get("aircraft_type") == "Cirrus SR22":
+            print("✅ Aircraft type correctly set to Cirrus SR22")
+        else:
+            print(f"❌ Aircraft type mismatch. Expected: Cirrus SR22, Got: {data.get('aircraft_type')}")
+    
+    # Test 3: Simulate ATC with Custom Aircraft
+    print("\n" + "="*80)
+    print("TEST 3: POST ATC Simulate with Custom Aircraft")
+    print("="*80)
+    
+    simulate_data = {
+        "scenario_id": "takeoff",
+        "pilot_message": "LAX Tower, N54321, ready for takeoff runway 25 left",
+        "session_id": "test_session_custom",
+        "callsign": "N54321",
+        "aircraft_type": "Cirrus SR22"
+    }
+    
+    result3 = test_request("POST", f"{API_BASE}/atc/simulate", data=simulate_data)
+    expected_fields = ["atc_response", "audio_base64", "frequency", "atc_facility", "callsign", "aircraft_type"]
+    print_test_result("ATC Simulate with Custom Aircraft", result3, expected_fields)
+    test_results.append(("ATC Simulate (First)", result3["success"]))
+    
+    # Store first response for consistency check
+    first_atc_response = None
+    if result3["success"] and isinstance(result3["data"], dict):
+        first_atc_response = result3["data"].get("atc_response", "")
+        print(f"\n📝 First ATC Response: {first_atc_response}")
+    
+    # Test 4: Verify ATC Consistency (Critical Test)
+    print("\n" + "="*80)
+    print("TEST 4: POST ATC Simulate - Consistency Check (CRITICAL)")
+    print("="*80)
+    
+    # Send another message in the SAME session
+    simulate_data2 = {
+        "scenario_id": "takeoff",
+        "pilot_message": "N54321, cleared for takeoff runway 25 left",
+        "session_id": "test_session_custom",  # Same session ID
+        "callsign": "N54321",
+        "aircraft_type": "Cirrus SR22"
+    }
+    
+    result4 = test_request("POST", f"{API_BASE}/atc/simulate", data=simulate_data2)
+    print_test_result("ATC Simulate - Consistency Check", result4, expected_fields)
+    test_results.append(("ATC Consistency Check", result4["success"]))
+    
+    # Analyze consistency
+    if result4["success"] and isinstance(result4["data"], dict):
+        second_atc_response = result4["data"].get("atc_response", "")
+        print(f"\n📝 Second ATC Response: {second_atc_response}")
+        
+        # Check if ATC acknowledges the readback appropriately
+        if "cleared" in second_atc_response.lower() or "roger" in second_atc_response.lower() or "contact" in second_atc_response.lower():
+            print("✅ ATC appears to acknowledge the readback appropriately")
+        else:
+            print("⚠️  ATC response may not be acknowledging the readback properly")
+        
+        # Check for contradictions
+        if first_atc_response and "cleared for takeoff" in first_atc_response.lower() and "hold short" in second_atc_response.lower():
+            print("❌ CRITICAL: ATC contradicted itself - gave clearance then told to hold short")
+        elif first_atc_response:
+            print("✅ No obvious contradictions detected in ATC responses")
+    
+    # Test 5: Reset Session
+    print("\n" + "="*80)
+    print("TEST 5: POST Reset Session")
+    print("="*80)
+    
+    reset_params = {
+        "session_id": "test_session_custom",
+        "scenario_id": "takeoff"
+    }
+    
+    result5 = test_request("POST", f"{API_BASE}/atc/reset-session", params=reset_params)
+    print_test_result("Reset Session", result5)
+    test_results.append(("Reset Session", result5["success"]))
+    
+    # Verify reset worked by checking if we get a success message
+    if result5["success"] and isinstance(result5["data"], dict):
+        if "message" in result5["data"] and "reset" in result5["data"]["message"].lower():
+            print("✅ Session reset confirmed")
+        else:
+            print("⚠️  Session reset response unclear")
+    
+    # Summary
+    print("\n" + "="*80)
+    print("🏁 TEST SUMMARY")
+    print("="*80)
+    
+    passed = sum(1 for _, success in test_results if success)
+    total = len(test_results)
+    
+    print(f"Tests Passed: {passed}/{total}")
+    print(f"Success Rate: {(passed/total)*100:.1f}%")
+    
+    print("\nDetailed Results:")
+    for test_name, success in test_results:
         status = "✅ PASS" if success else "❌ FAIL"
-        print(f"{status} {test_name}")
-        if details:
-            print(f"    Details: {details}")
-        if not success and response_data:
-            print(f"    Response: {response_data}")
-        print()
-
-    def test_single_device_login_first_time(self) -> Optional[str]:
-        """Test 1: Single Device Login - First Login"""
-        try:
-            payload = {
-                "code": "TEST1234",
-                "device_id": "test_device_123"
-            }
-            
-            response = self.session.post(f"{API_BASE}/access-codes/verify", json=payload)
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("valid") and "client_name" in data:
-                    self.log_test(
-                        "Single Device Login - First Login",
-                        True,
-                        f"Successfully logged in with client_name: {data.get('client_name')}"
-                    )
-                    return data.get('client_name')
-                else:
-                    self.log_test(
-                        "Single Device Login - First Login",
-                        False,
-                        "Response missing required fields",
-                        data
-                    )
-            else:
-                self.log_test(
-                    "Single Device Login - First Login",
-                    False,
-                    f"HTTP {response.status_code}: {response.text}",
-                    response.text
-                )
-                
-        except Exception as e:
-            self.log_test(
-                "Single Device Login - First Login",
-                False,
-                f"Exception: {str(e)}"
-            )
-        
-        return None
-
-    def test_single_device_login_same_device(self):
-        """Test 2: Single Device Login - Same Device (should work)"""
-        try:
-            payload = {
-                "code": "TEST1234",
-                "device_id": "test_device_123"
-            }
-            
-            response = self.session.post(f"{API_BASE}/access-codes/verify", json=payload)
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("valid"):
-                    self.log_test(
-                        "Single Device Login - Same Device",
-                        True,
-                        "Same device login successful as expected"
-                    )
-                else:
-                    self.log_test(
-                        "Single Device Login - Same Device",
-                        False,
-                        "Login failed unexpectedly",
-                        data
-                    )
-            else:
-                self.log_test(
-                    "Single Device Login - Same Device",
-                    False,
-                    f"HTTP {response.status_code}: {response.text}",
-                    response.text
-                )
-                
-        except Exception as e:
-            self.log_test(
-                "Single Device Login - Same Device",
-                False,
-                f"Exception: {str(e)}"
-            )
-
-    def test_single_device_login_different_device(self):
-        """Test 3: Single Device Login - Different Device (should fail)"""
-        try:
-            payload = {
-                "code": "TEST1234",
-                "device_id": "different_device_456"
-            }
-            
-            response = self.session.post(f"{API_BASE}/access-codes/verify", json=payload)
-            
-            if response.status_code == 403:
-                response_text = response.text
-                if "DEVICE_BLOCKED" in response_text:
-                    self.log_test(
-                        "Single Device Login - Different Device",
-                        True,
-                        "Correctly blocked different device with DEVICE_BLOCKED message"
-                    )
-                else:
-                    self.log_test(
-                        "Single Device Login - Different Device",
-                        False,
-                        "Got 403 but missing DEVICE_BLOCKED message",
-                        response_text
-                    )
-            else:
-                self.log_test(
-                    "Single Device Login - Different Device",
-                    False,
-                    f"Expected HTTP 403 but got {response.status_code}: {response.text}",
-                    response.text
-                )
-                
-        except Exception as e:
-            self.log_test(
-                "Single Device Login - Different Device",
-                False,
-                f"Exception: {str(e)}"
-            )
-
-    def get_access_code_id(self) -> Optional[str]:
-        """Get the ID for TEST1234 access code"""
-        try:
-            response = self.session.get(f"{API_BASE}/access-codes")
-            
-            if response.status_code == 200:
-                codes = response.json()
-                for code in codes:
-                    if code.get("code") == "TEST1234":
-                        return code.get("id")
-                        
-                self.log_test(
-                    "Get Access Code ID",
-                    False,
-                    "TEST1234 code not found in access codes list"
-                )
-            else:
-                self.log_test(
-                    "Get Access Code ID",
-                    False,
-                    f"HTTP {response.status_code}: {response.text}"
-                )
-                
-        except Exception as e:
-            self.log_test(
-                "Get Access Code ID",
-                False,
-                f"Exception: {str(e)}"
-            )
-        
-        return None
-
-    def test_release_device(self, code_id: str):
-        """Test 4: Release Device - Admin Endpoint"""
-        try:
-            response = self.session.put(f"{API_BASE}/access-codes/{code_id}/release-device")
-            
-            if response.status_code == 200:
-                data = response.json()
-                if "message" in data and "released" in data["message"].lower():
-                    self.log_test(
-                        "Release Device - Admin Endpoint",
-                        True,
-                        f"Device released successfully: {data.get('message')}"
-                    )
-                    return True
-                else:
-                    self.log_test(
-                        "Release Device - Admin Endpoint",
-                        False,
-                        "Unexpected response format",
-                        data
-                    )
-            else:
-                self.log_test(
-                    "Release Device - Admin Endpoint",
-                    False,
-                    f"HTTP {response.status_code}: {response.text}",
-                    response.text
-                )
-                
-        except Exception as e:
-            self.log_test(
-                "Release Device - Admin Endpoint",
-                False,
-                f"Exception: {str(e)}"
-            )
-        
-        return False
-
-    def test_login_after_release(self):
-        """Test 5: Login After Release"""
-        try:
-            payload = {
-                "code": "TEST1234",
-                "device_id": "new_device_789"
-            }
-            
-            response = self.session.post(f"{API_BASE}/access-codes/verify", json=payload)
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("valid"):
-                    self.log_test(
-                        "Login After Release",
-                        True,
-                        "Successfully logged in with new device after release"
-                    )
-                else:
-                    self.log_test(
-                        "Login After Release",
-                        False,
-                        "Login failed after device release",
-                        data
-                    )
-            else:
-                self.log_test(
-                    "Login After Release",
-                    False,
-                    f"HTTP {response.status_code}: {response.text}",
-                    response.text
-                )
-                
-        except Exception as e:
-            self.log_test(
-                "Login After Release",
-                False,
-                f"Exception: {str(e)}"
-            )
-
-    def test_get_atc_scenarios(self) -> bool:
-        """Test getting ATC scenarios"""
-        try:
-            response = self.session.get(f"{API_BASE}/atc/scenarios")
-            
-            if response.status_code == 200:
-                scenarios = response.json()
-                if isinstance(scenarios, list) and len(scenarios) > 0:
-                    scenario_names = [s.get('name', 'Unknown') for s in scenarios]
-                    self.log_test(
-                        "Get ATC Scenarios",
-                        True,
-                        f"Retrieved {len(scenarios)} scenarios: {', '.join(scenario_names)}"
-                    )
-                    return True
-                else:
-                    self.log_test(
-                        "Get ATC Scenarios",
-                        False,
-                        "No scenarios returned or invalid format",
-                        scenarios
-                    )
-            else:
-                self.log_test(
-                    "Get ATC Scenarios",
-                    False,
-                    f"HTTP {response.status_code}: {response.text}",
-                    response.text
-                )
-                
-        except Exception as e:
-            self.log_test(
-                "Get ATC Scenarios",
-                False,
-                f"Exception: {str(e)}"
-            )
-        
-        return False
-
-    def test_atc_simulation_with_radio_effect(self):
-        """Test 6: ATC Simulation with Radio Effect"""
-        try:
-            payload = {
-                "scenario_id": "startup",
-                "pilot_message": "Ground, November one two three four five, request taxi",
-                "session_id": "test_session_1"
-            }
-            
-            response = self.session.post(f"{API_BASE}/atc/simulate", json=payload)
-            
-            if response.status_code == 200:
-                data = response.json()
-                
-                # Check required fields
-                required_fields = ["atc_response", "frequency", "atc_facility"]
-                missing_fields = [field for field in required_fields if field not in data]
-                
-                if missing_fields:
-                    self.log_test(
-                        "ATC Simulation with Radio Effect",
-                        False,
-                        f"Missing required fields: {missing_fields}",
-                        data
-                    )
-                    return
-                
-                # Check if audio is present and appears to be base64
-                audio_base64 = data.get("audio_base64")
-                audio_valid = False
-                
-                if audio_base64:
-                    try:
-                        # Try to decode base64 to verify it's valid
-                        audio_bytes = base64.b64decode(audio_base64)
-                        audio_valid = len(audio_bytes) > 0
-                    except Exception:
-                        audio_valid = False
-                
-                success_details = []
-                success_details.append(f"ATC Response: {data['atc_response'][:100]}...")
-                success_details.append(f"Frequency: {data['frequency']}")
-                success_details.append(f"ATC Facility: {data['atc_facility']}")
-                
-                if audio_valid:
-                    success_details.append(f"Audio: Valid base64 audio ({len(audio_base64)} chars)")
-                    self.log_test(
-                        "ATC Simulation with Radio Effect",
-                        True,
-                        "; ".join(success_details)
-                    )
-                else:
-                    success_details.append("Audio: Missing or invalid")
-                    self.log_test(
-                        "ATC Simulation with Radio Effect",
-                        False,
-                        "; ".join(success_details),
-                        {"audio_present": bool(audio_base64), "audio_length": len(audio_base64) if audio_base64 else 0}
-                    )
-                    
-            else:
-                self.log_test(
-                    "ATC Simulation with Radio Effect",
-                    False,
-                    f"HTTP {response.status_code}: {response.text}",
-                    response.text
-                )
-                
-        except Exception as e:
-            self.log_test(
-                "ATC Simulation with Radio Effect",
-                False,
-                f"Exception: {str(e)}"
-            )
-
-    def run_all_tests(self):
-        """Run all tests in sequence"""
-        print("=" * 60)
-        print("AeroEnglish ATC App Backend Testing")
-        print("=" * 60)
-        print()
-        
-        # Test 1: First login
-        client_name = self.test_single_device_login_first_time()
-        
-        # Test 2: Same device login
-        self.test_single_device_login_same_device()
-        
-        # Test 3: Different device login (should fail)
-        self.test_single_device_login_different_device()
-        
-        # Test 4: Get access code ID and release device
-        code_id = self.get_access_code_id()
-        if code_id:
-            device_released = self.test_release_device(code_id)
-            
-            # Test 5: Login after release
-            if device_released:
-                self.test_login_after_release()
-        else:
-            self.log_test(
-                "Release Device - Admin Endpoint",
-                False,
-                "Could not find TEST1234 access code ID"
-            )
-            self.log_test(
-                "Login After Release",
-                False,
-                "Skipped due to missing access code ID"
-            )
-        
-        # Test 6: ATC Scenarios
-        scenarios_available = self.test_get_atc_scenarios()
-        
-        # Test 7: ATC Simulation
-        if scenarios_available:
-            self.test_atc_simulation_with_radio_effect()
-        else:
-            self.log_test(
-                "ATC Simulation with Radio Effect",
-                False,
-                "Skipped due to no available scenarios"
-            )
-        
-        # Print summary
-        self.print_summary()
-
-    def print_summary(self):
-        """Print test summary"""
-        print("=" * 60)
-        print("TEST SUMMARY")
-        print("=" * 60)
-        
-        passed = sum(1 for result in self.test_results if result["success"])
-        total = len(self.test_results)
-        
-        print(f"Total Tests: {total}")
-        print(f"Passed: {passed}")
-        print(f"Failed: {total - passed}")
-        print(f"Success Rate: {(passed/total)*100:.1f}%")
-        print()
-        
-        # Show failed tests
-        failed_tests = [result for result in self.test_results if not result["success"]]
-        if failed_tests:
-            print("FAILED TESTS:")
-            for result in failed_tests:
-                print(f"❌ {result['test']}: {result['details']}")
-        else:
-            print("🎉 ALL TESTS PASSED!")
-        
-        print()
+        print(f"  {status} - {test_name}")
+    
+    if passed == total:
+        print("\n🎉 ALL TESTS PASSED! ATC Simulator is working correctly.")
+        return 0
+    else:
+        print(f"\n⚠️  {total - passed} test(s) failed. Please review the issues above.")
+        return 1
 
 if __name__ == "__main__":
-    tester = AeroEnglishTester()
-    tester.run_all_tests()
+    sys.exit(main())

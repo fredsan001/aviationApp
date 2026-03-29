@@ -94,6 +94,14 @@ export default function PracticeScreen() {
   const [evaluation, setEvaluation] = useState<any>(null);
   const [showEvaluation, setShowEvaluation] = useState(false);
   const [sessionId] = useState(() => `session_${Date.now()}`);
+  
+  // ATC Customization State
+  const [customCallsign, setCustomCallsign] = useState('');
+  const [selectedAircraftType, setSelectedAircraftType] = useState('');
+  const [aircraftTypes, setAircraftTypes] = useState<{type: string; category: string}[]>([]);
+  const [showCustomization, setShowCustomization] = useState(false);
+  const [currentCallsign, setCurrentCallsign] = useState('');
+  const [currentAircraftType, setCurrentAircraftType] = useState('');
 
   // Listening Test State
   const [listeningSegment, setListeningSegment] = useState<ListeningSegment | null>(null);
@@ -146,8 +154,15 @@ export default function PracticeScreen() {
   const fetchScenarios = async () => {
     setLoading(true);
     try {
-      const data = await apiService.getATCScenarios();
-      setScenarios(data);
+      const [scenariosData, aircraftData] = await Promise.all([
+        apiService.getATCScenarios(),
+        apiService.getATCAircraftTypes()
+      ]);
+      setScenarios(scenariosData);
+      setAircraftTypes(aircraftData);
+      if (aircraftData.length > 0) {
+        setSelectedAircraftType(aircraftData[0].type);
+      }
     } catch (error) {
       console.error('Error fetching scenarios:', error);
       Alert.alert('Error', 'No se pudieron cargar los escenarios');

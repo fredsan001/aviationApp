@@ -1019,52 +1019,151 @@ ATC_SCENARIOS = {
     }
 }
 
-ATC_SYSTEM_PROMPT = """You are a highly realistic Air Traffic Controller (ATC) simulator for training pilots. You must maintain PERFECT CONSISTENCY throughout the entire conversation.
+ATC_SYSTEM_PROMPT = """You are a highly realistic Air Traffic Controller (ATC) simulator for training pilots. Your primary goal is to maintain PERFECT CONSISTENCY and help pilots practice realistic radio communications.
 
-CRITICAL MEMORY RULES:
-1. ALWAYS remember and reference ALL previous instructions you gave
-2. NEVER contradict yourself - if you gave an instruction, stick with it
-3. Keep track of: assigned runway, taxi route, altimeter setting, squawk code, headings, altitudes
-4. If pilot reads back correctly, acknowledge with "readback correct" 
-5. If pilot reads back incorrectly, correct them immediately
+## ABSOLUTE RULES (NEVER VIOLATE):
+1. TRACK ALL CLEARANCES: Keep an internal log of every instruction you give (runway, taxi route, squawk, altitude, heading)
+2. NEVER CONTRADICT: If you cleared someone for takeoff, NEVER say you didn't
+3. ACKNOWLEDGE READBACKS: If pilot reads back correctly = "readback correct" or "correct"
+4. CORRECT ERRORS: If pilot reads back incorrectly, say exactly what was wrong
+5. STAY IN CHARACTER: You are ONLY the ATC controller. Never break character.
 
-STANDARD ATC PHRASEOLOGY:
-- Use ONLY standard FAA/ICAO phraseology
-- Keep responses brief (under 40 words typically)
-- Use phonetic alphabet (Alpha, Bravo, Charlie, etc.)
-- Pronounce numbers individually: runway "three one left", altitude "flight level three five zero"
-- Always include callsign at start or end of transmission
+## RESPONSE FORMAT:
+- Start OR end each transmission with the aircraft callsign
+- Keep responses under 35 words typically
+- Use standard FAA/ICAO phraseology ONLY
+- Numbers spoken individually: runway "three one left", altitude "niner thousand five hundred"
+- Use phonetic alphabet: Alpha, Bravo, Charlie, Delta, Echo, Foxtrot, Golf, Hotel, India, Juliet, Kilo, Lima, Mike, November, Oscar, Papa, Quebec, Romeo, Sierra, Tango, Uniform, Victor, Whiskey, X-ray, Yankee, Zulu
 
-REALISTIC ELEMENTS:
-- Include altimeter setting (e.g., "altimeter two niner niner two")
-- Include squawk codes when appropriate
-- Reference winds for takeoff/landing clearances
-- Use "roger", "wilco", "affirm", "negative" appropriately
-
-CURRENT SCENARIO:
-Airport/Location: {airport}
-ATC Facility: {atc_facility}  
+## CURRENT SESSION INFO:
+Airport: {airport}
+ATC Facility: {atc_facility}
 Frequency: {frequency} MHz
-Flight Phase: {phase}
+Phase: {phase}
 Situation: {initial_situation}
+Aircraft Type: {aircraft_type}
+Callsign: {callsign} (spoken as {callsign_phonetic})
 
-Aircraft: Cessna 172, Callsign November One Two Three Four Five (N12345)
+## YOUR STATE TRACKING (update mentally after each exchange):
+- Assigned Runway: [track this]
+- Taxi Route: [track this]
+- Assigned Squawk: [track this]
+- Assigned Altitude: [track this]
+- Assigned Heading: [track this]
+- Clearance Status: [track this]
 
-IMPORTANT: You are the ATC controller ONLY. Respond professionally and consistently. Track all clearances given."""
+Respond ONLY as {atc_facility}. Be professional, concise, and absolutely consistent."""
+
+# Aircraft types for variety
+AIRCRAFT_TYPES = [
+    {"type": "Cessna 172", "category": "light"},
+    {"type": "Piper Cherokee", "category": "light"},
+    {"type": "Cessna 182", "category": "light"},
+    {"type": "Beechcraft Bonanza", "category": "light"},
+    {"type": "Cirrus SR22", "category": "light"},
+    {"type": "Piper Archer", "category": "light"},
+]
+
+# Initial ATC messages by scenario (randomized)
+ATC_INITIAL_MESSAGES = {
+    "startup": [
+        "{callsign}, {facility}, runway {runway} in use, winds {wind}, altimeter {altimeter}. Advise when ready to copy taxi.",
+        "{callsign}, {facility}, good morning. Information {atis} current, runway {runway} in use. State request.",
+        "{facility}, {callsign} is with you at gate {gate}. Altimeter {altimeter}, runway {runway} active.",
+    ],
+    "takeoff": [
+        "{callsign}, {facility}, winds {wind}, runway {runway}, cleared for takeoff.",
+        "{callsign}, {facility}, traffic departing, runway {runway}, line up and wait.",
+        "{callsign}, {facility}, hold short runway {runway}, traffic on final.",
+    ],
+    "cruise": [
+        "{callsign}, {facility}, radar contact, {altitude}, squawk {squawk}.",
+        "{callsign}, {facility}, traffic twelve o'clock, five miles, opposite direction, altitude indicates {alt_traffic}.",
+        "{callsign}, {facility}, for traffic, turn right heading {heading}.",
+    ],
+    "approach": [
+        "{callsign}, {facility}, expect vectors ILS runway {runway}, descend and maintain {altitude}.",
+        "{callsign}, {facility}, radar contact, say intentions.",
+        "{callsign}, {facility}, cleared visual approach runway {runway}, report field in sight.",
+    ],
+    "pattern": [
+        "{callsign}, {airport} traffic, report midfield left downwind runway {runway}.",
+        "{callsign}, traffic, extend downwind, traffic on base.",
+        "{callsign}, cleared touch and go runway {runway}.",
+    ],
+    "emergency_engine": [
+        "{callsign}, {facility}, roger mayday, say souls on board and fuel remaining.",
+        "{callsign}, {facility}, emergency services notified, nearest airport {airport} at your twelve o'clock, {distance} miles.",
+        "{callsign}, {facility}, squawk seven seven zero zero, radar contact.",
+    ],
+    "emergency_lost": [
+        "{callsign}, {facility}, squawk seven seven zero zero and ident.",
+        "{callsign}, {facility}, radar contact, say your altitude and heading.",
+        "{callsign}, {facility}, turn left heading {heading} for vectors to nearest VFR airport.",
+    ],
+}
+
+def generate_callsign():
+    """Generate a random realistic callsign"""
+    prefixes = ["N", "N"]  # US registration
+    nums = ''.join([str(random.randint(0, 9)) for _ in range(random.randint(3, 5))])
+    suffix = random.choice(["", "", "AB", "CD", "XY", "JK", "WR"])
+    return f"{random.choice(prefixes)}{nums}{suffix}"
+
+def callsign_to_phonetic(callsign: str) -> str:
+    """Convert callsign to phonetic pronunciation"""
+    phonetic = {
+        '0': 'zero', '1': 'one', '2': 'two', '3': 'three', '4': 'four',
+        '5': 'five', '6': 'six', '7': 'seven', '8': 'eight', '9': 'niner',
+        'A': 'Alpha', 'B': 'Bravo', 'C': 'Charlie', 'D': 'Delta', 'E': 'Echo',
+        'F': 'Foxtrot', 'G': 'Golf', 'H': 'Hotel', 'I': 'India', 'J': 'Juliet',
+        'K': 'Kilo', 'L': 'Lima', 'M': 'Mike', 'N': 'November', 'O': 'Oscar',
+        'P': 'Papa', 'Q': 'Quebec', 'R': 'Romeo', 'S': 'Sierra', 'T': 'Tango',
+        'U': 'Uniform', 'V': 'Victor', 'W': 'Whiskey', 'X': 'X-ray', 'Y': 'Yankee',
+        'Z': 'Zulu'
+    }
+    return ' '.join([phonetic.get(c.upper(), c) for c in callsign])
+
+def generate_random_atc_elements():
+    """Generate random realistic ATC elements"""
+    runways = ["31L", "31R", "27L", "27R", "25L", "25R", "19L", "19R", "10L", "10R", "04", "22", "36", "18"]
+    winds = [f"{random.randint(0, 36):02d}0 at {random.randint(3, 15)}" for _ in range(1)][0]
+    altimeters = [f"two niner {random.randint(85, 99):02d}", f"three zero {random.randint(0, 15):02d}"]
+    atis_letters = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf', 'Hotel']
+    squawks = [f"{random.randint(1, 7)}{random.randint(0, 7)}{random.randint(0, 7)}{random.randint(0, 7)}" for _ in range(1)][0]
+    
+    return {
+        "runway": random.choice(runways),
+        "wind": winds,
+        "altimeter": random.choice(altimeters),
+        "atis": random.choice(atis_letters),
+        "squawk": squawks,
+        "gate": f"{random.choice(['A', 'B', 'C', 'D'])}{random.randint(1, 20)}",
+        "altitude": f"{random.choice([3, 4, 5, 6, 7, 8, 9])} thousand",
+        "heading": f"{random.randint(1, 36):03d}",
+        "alt_traffic": f"{random.choice([4, 5, 6, 7, 8])} thousand five hundred",
+        "distance": str(random.randint(5, 25)),
+        "airport": random.choice(["Ontario", "Riverside", "Chino", "El Monte", "Burbank"]),
+    }
 
 class ATCSimulationRequest(BaseModel):
     scenario_id: str
     pilot_message: str
     session_id: str
+    callsign: Optional[str] = None  # Custom callsign
+    aircraft_type: Optional[str] = None  # Custom aircraft type
 
 class ATCSimulationResponse(BaseModel):
     atc_response: str
     audio_base64: Optional[str] = None
     frequency: str
     atc_facility: str
+    callsign: str
+    aircraft_type: str
 
-# Store for ATC chat sessions
+# Store for ATC chat sessions with their config
 atc_sessions: dict = {}
+atc_session_configs: dict = {}  # Store callsign/aircraft per session
 
 @api_router.get("/atc/scenarios")
 async def get_atc_scenarios():
@@ -1082,6 +1181,11 @@ async def get_atc_scenarios():
         })
     return scenarios
 
+@api_router.get("/atc/aircraft-types")
+async def get_aircraft_types():
+    """Get available aircraft types for simulation"""
+    return AIRCRAFT_TYPES
+
 @api_router.post("/atc/simulate")
 async def simulate_atc(request: ATCSimulationRequest):
     """Process pilot communication and get ATC response"""
@@ -1097,13 +1201,35 @@ async def simulate_atc(request: ATCSimulationRequest):
         # Create or get existing chat session
         session_key = f"{request.session_id}_{request.scenario_id}"
         
+        # Get or create session config
+        if session_key not in atc_session_configs:
+            # Generate or use provided callsign/aircraft
+            callsign = request.callsign or generate_callsign()
+            aircraft = request.aircraft_type or random.choice(AIRCRAFT_TYPES)["type"]
+            atc_session_configs[session_key] = {
+                "callsign": callsign,
+                "callsign_phonetic": callsign_to_phonetic(callsign),
+                "aircraft_type": aircraft
+            }
+        
+        config = atc_session_configs[session_key]
+        
         if session_key not in atc_sessions:
+            # Build dynamic situation with callsign
+            situation = scenario["initial_situation"].replace(
+                "Your aircraft is a Cessna 172 with callsign N12345",
+                f"Your aircraft is a {config['aircraft_type']} with callsign {config['callsign']}"
+            ).replace("N12345", config['callsign'])
+            
             system_message = ATC_SYSTEM_PROMPT.format(
                 airport=scenario["airport"],
                 atc_facility=scenario["atc_facility"],
                 frequency=scenario["frequency"],
                 phase=scenario["phase"],
-                initial_situation=scenario["initial_situation"]
+                initial_situation=situation,
+                aircraft_type=config["aircraft_type"],
+                callsign=config["callsign"],
+                callsign_phonetic=config["callsign_phonetic"]
             )
             
             chat = LlmChat(
@@ -1126,9 +1252,9 @@ async def simulate_atc(request: ATCSimulationRequest):
             tts = OpenAITextToSpeech(api_key=api_key)
             audio_bytes = await tts.generate_speech(
                 text=atc_response,
-                model="tts-1",
-                voice="onyx",  # Deep, authoritative voice for ATC
-                speed=1.1  # Slightly faster like real ATC
+                model="tts-1-hd",  # Higher quality model for better voice
+                voice="echo",  # Different voice - more authoritative
+                speed=1.15  # Faster like real ATC
             )
             
             # Apply radio communication effect
@@ -1141,12 +1267,49 @@ async def simulate_atc(request: ATCSimulationRequest):
             atc_response=atc_response,
             audio_base64=audio_base64,
             frequency=scenario["frequency"],
-            atc_facility=scenario["atc_facility"]
+            atc_facility=scenario["atc_facility"],
+            callsign=config["callsign"],
+            aircraft_type=config["aircraft_type"]
         )
         
     except Exception as e:
         logger.error(f"ATC simulation error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/atc/initial-contact/{scenario_id}")
+async def get_initial_contact(scenario_id: str, callsign: Optional[str] = None, aircraft_type: Optional[str] = None):
+    """Get a randomized initial ATC contact message for a scenario"""
+    scenario = ATC_SCENARIOS.get(scenario_id)
+    if not scenario:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+    
+    # Use provided or generate random callsign/aircraft
+    cs = callsign or generate_callsign()
+    aircraft = aircraft_type or random.choice(AIRCRAFT_TYPES)["type"]
+    
+    # Generate random ATC elements
+    elements = generate_random_atc_elements()
+    elements["callsign"] = cs
+    elements["facility"] = scenario["atc_facility"]
+    elements["airport"] = scenario["airport"]
+    
+    # Get random initial message for this scenario type
+    messages = ATC_INITIAL_MESSAGES.get(scenario_id, ATC_INITIAL_MESSAGES["startup"])
+    template = random.choice(messages)
+    
+    try:
+        initial_message = template.format(**elements)
+    except KeyError:
+        initial_message = f"{cs}, {scenario['atc_facility']}, go ahead."
+    
+    return {
+        "initial_message": initial_message,
+        "callsign": cs,
+        "callsign_phonetic": callsign_to_phonetic(cs),
+        "aircraft_type": aircraft,
+        "frequency": scenario["frequency"],
+        "atc_facility": scenario["atc_facility"]
+    }
 
 @api_router.post("/atc/reset-session")
 async def reset_atc_session(session_id: str, scenario_id: str):
@@ -1154,50 +1317,9 @@ async def reset_atc_session(session_id: str, scenario_id: str):
     session_key = f"{session_id}_{scenario_id}"
     if session_key in atc_sessions:
         del atc_sessions[session_key]
+    if session_key in atc_session_configs:
+        del atc_session_configs[session_key]
     return {"message": "Session reset"}
-
-@api_router.get("/atc/initial-contact/{scenario_id}")
-async def get_initial_contact(scenario_id: str):
-    """Get the initial ATC contact for a scenario"""
-    scenario = ATC_SCENARIOS.get(scenario_id)
-    if not scenario:
-        raise HTTPException(status_code=404, detail="Scenario not found")
-    
-    # Initial ATC greeting based on scenario
-    initial_messages = {
-        "startup": f"{scenario['atc_facility']}, {scenario['frequency']}, ATIS information Alpha current.",
-        "takeoff": f"N12345, {scenario['atc_facility']}, runway 25L, cleared for takeoff, wind 270 at 8.",
-        "cruise": "N12345, Oakland Center, radar contact, 8,500, squawk 4521.",
-        "approach": "N12345, NorCal Approach, squawk 0425, report airport in sight.",
-        "pattern": "Palo Alto Traffic, Cessna 12345, 5 miles south, inbound for landing runway 31.",
-        "emergency_engine": "All aircraft, maintain current altitude and heading. Emergency aircraft has priority.",
-        "emergency_lost": "Aircraft calling, say again callsign and souls on board."
-    }
-    
-    initial_msg = initial_messages.get(scenario_id, f"{scenario['atc_facility']}, standby.")
-    
-    # Generate audio for initial contact
-    api_key = os.getenv("EMERGENT_LLM_KEY")
-    audio_base64 = None
-    
-    if api_key:
-        try:
-            tts = OpenAITextToSpeech(api_key=api_key)
-            audio_bytes = await tts.generate_speech(
-                text=initial_msg,
-                model="tts-1",
-                voice="onyx",
-                speed=1.1
-            )
-            audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
-        except Exception as e:
-            logger.error(f"Initial contact TTS failed: {e}")
-    
-    return {
-        "message": initial_msg,
-        "audio_base64": audio_base64,
-        "scenario": scenario
-    }
 
 # Evaluation prompt for pilot voice/text
 EVALUATION_SYSTEM_PROMPT = """You are an expert ATC communication instructor evaluating a pilot's radio transmission. 

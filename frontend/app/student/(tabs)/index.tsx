@@ -182,69 +182,105 @@ export default function StudentVideos() {
     const isWatched = watchedVideoIds.has(item.id) || item.watched_count && item.watched_count > 0;
     const isReady = item.ready_for_evaluation || progressMap.get(item.id)?.ready_for_evaluation;
     
+    // Path mode: Check if video is unlocked
+    // First video is always unlocked, others require previous video to be watched
+    let isLocked = false;
+    if (viewMode === 'path' && index > 0) {
+      const previousVideo = displayedVideos[index - 1];
+      const previousWatched = watchedVideoIds.has(previousVideo.id) || 
+                              (previousVideo.watched_count && previousVideo.watched_count > 0);
+      isLocked = !previousWatched;
+    }
+    
+    const handlePress = () => {
+      if (isLocked) {
+        Alert.alert(
+          'Video Bloqueado',
+          'Debes ver el video anterior primero para desbloquear este video.',
+          [{ text: 'Entendido', style: 'default' }]
+        );
+        return;
+      }
+      router.push({ pathname: '/student/player', params: { id: item.id } });
+    };
+    
     return (
       <TouchableOpacity
-        style={styles.videoCard}
-        onPress={() => router.push({ pathname: '/student/player', params: { id: item.id } })}
-        activeOpacity={0.8}
+        style={[styles.videoCard, isLocked && styles.videoCardLocked]}
+        onPress={handlePress}
+        activeOpacity={isLocked ? 0.9 : 0.8}
       >
         <View style={styles.videoThumbnail}>
           <Image
             source={{ uri: thumbnailUrl }}
-            style={styles.thumbnailImage}
+            style={[styles.thumbnailImage, isLocked && styles.thumbnailLocked]}
             resizeMode="cover"
           />
-          <View style={styles.playIconOverlay}>
-            <Ionicons name="play-circle" size={48} color="rgba(255,255,255,0.9)" />
-          </View>
+          {isLocked ? (
+            <View style={styles.lockedOverlay}>
+              <Ionicons name="lock-closed" size={48} color="rgba(255,255,255,0.9)" />
+            </View>
+          ) : (
+            <View style={styles.playIconOverlay}>
+              <Ionicons name="play-circle" size={48} color="rgba(255,255,255,0.9)" />
+            </View>
+          )}
           <View style={styles.durationBadge}>
             <Text style={styles.durationText}>{formatDuration(item.duration)}</Text>
           </View>
-          {isWatched && (
+          {isWatched && !isLocked && (
             <View style={styles.watchedBadge}>
               <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
               <Text style={styles.watchedText}>Visto</Text>
             </View>
           )}
           {viewMode === 'path' && (
-            <View style={styles.pathOrderBadge}>
+            <View style={[styles.pathOrderBadge, isLocked && styles.pathOrderBadgeLocked]}>
               <Text style={styles.pathOrderText}>{index + 1}</Text>
             </View>
           )}
         </View>
         <View style={styles.videoInfo}>
-          <Text style={styles.videoTitle} numberOfLines={2}>{item.title}</Text>
-          <Text style={styles.videoCategory}>{item.category}</Text>
-          <View style={styles.videoMeta}>
-            {item.subtitles && item.subtitles.length > 0 && (
-              <View style={styles.subtitleBadge}>
-                <Ionicons name="text" size={12} color="#4CAF50" />
-                <Text style={styles.subtitleCount}>{item.subtitles.length} segmentos</Text>
+          <Text style={[styles.videoTitle, isLocked && styles.videoTitleLocked]} numberOfLines={2}>
+            {item.title}
+          </Text>
+          {viewMode !== 'path' && (
+            <Text style={styles.videoCategory}>{item.category}</Text>
+          )}
+          {!isLocked && (
+            <>
+              <View style={styles.videoMeta}>
+                {item.subtitles && item.subtitles.length > 0 && (
+                  <View style={styles.subtitleBadge}>
+                    <Ionicons name="text" size={12} color="#4CAF50" />
+                    <Text style={styles.subtitleCount}>{item.subtitles.length} segmentos</Text>
+                  </View>
+                )}
+                {item.watched_count && item.watched_count > 0 && (
+                  <View style={styles.watchCountBadge}>
+                    <Ionicons name="eye" size={12} color="#2196F3" />
+                    <Text style={styles.watchCountText}>{item.watched_count}x</Text>
+                  </View>
+                )}
               </View>
-            )}
-            {item.watched_count && item.watched_count > 0 && (
-              <View style={styles.watchCountBadge}>
-                <Ionicons name="eye" size={12} color="#2196F3" />
-                <Text style={styles.watchCountText}>{item.watched_count}x</Text>
-              </View>
-            )}
-          </View>
-          
-          {/* Ready for Evaluation Checkbox */}
-          <TouchableOpacity
-            style={[styles.readyCheckbox, isReady && styles.readyCheckboxActive]}
-            onPress={(e) => {
-              e.stopPropagation();
-              toggleReadyForEvaluation(item.id, isReady || false);
-            }}
-          >
-            <View style={[styles.checkbox, isReady && styles.checkboxChecked]}>
-              {isReady && <Ionicons name="checkmark" size={14} color="#fff" />}
-            </View>
-            <Text style={[styles.readyLabel, isReady && styles.readyLabelActive]}>
-              Listo para evaluación
-            </Text>
-          </TouchableOpacity>
+              
+              {/* Ready for Evaluation Checkbox */}
+              <TouchableOpacity
+                style={[styles.readyCheckbox, isReady && styles.readyCheckboxActive]}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  toggleReadyForEvaluation(item.id, isReady || false);
+                }}
+              >
+                <View style={[styles.checkbox, isReady && styles.checkboxChecked]}>
+                  {isReady && <Ionicons name="checkmark" size={14} color="#fff" />}
+                </View>
+                <Text style={[styles.readyLabel, isReady && styles.readyLabelActive]}>
+                  Listo para evaluación
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       </TouchableOpacity>
     );
@@ -516,6 +552,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     overflow: 'hidden',
   },
+  videoCardLocked: {
+    opacity: 0.7,
+  },
   videoThumbnail: {
     height: 180,
     backgroundColor: '#2A2A2A',
@@ -526,6 +565,9 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: '#2A2A2A',
   },
+  thumbnailLocked: {
+    opacity: 0.5,
+  },
   playIconOverlay: {
     position: 'absolute',
     top: 0,
@@ -535,6 +577,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  lockedOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
   },
   durationBadge: {
     position: 'absolute',
@@ -558,6 +610,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 4,
+  },
+  videoTitleLocked: {
+    color: '#888',
   },
   videoCategory: {
     color: '#888',
@@ -614,6 +669,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#E91E63',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  pathOrderBadgeLocked: {
+    backgroundColor: '#666',
   },
   pathOrderText: {
     color: '#fff',

@@ -149,15 +149,26 @@ export const apiService = {
     const response = await api.get('/atc/scenarios');
     return response.data;
   },
-  getATCInitialContact: async (scenarioId: string) => {
-    const response = await api.get(`/atc/initial-contact/${scenarioId}`);
+  getATCAircraftTypes: async () => {
+    const response = await api.get('/atc/aircraft-types');
     return response.data;
   },
-  simulateATC: async (scenarioId: string, pilotMessage: string, sessionId: string) => {
+  getATCInitialContact: async (scenarioId: string, callsign?: string, aircraftType?: string) => {
+    let url = `/atc/initial-contact/${scenarioId}`;
+    const params: string[] = [];
+    if (callsign) params.push(`callsign=${encodeURIComponent(callsign)}`);
+    if (aircraftType) params.push(`aircraft_type=${encodeURIComponent(aircraftType)}`);
+    if (params.length > 0) url += `?${params.join('&')}`;
+    const response = await api.get(url);
+    return response.data;
+  },
+  simulateATC: async (scenarioId: string, pilotMessage: string, sessionId: string, callsign?: string, aircraftType?: string) => {
     const response = await api.post('/atc/simulate', {
       scenario_id: scenarioId,
       pilot_message: pilotMessage,
       session_id: sessionId,
+      callsign,
+      aircraft_type: aircraftType,
     });
     return response.data;
   },

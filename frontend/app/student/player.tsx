@@ -127,16 +127,29 @@ export default function VideoPlayer() {
   const { accessCode } = useAppStore();
   const isWeb = Platform.OS === 'web';
 
-  // Setup audio mode for mobile
+  // Setup audio mode for mobile - enable background playback
   useEffect(() => {
     if (!isWeb) {
       Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
+        staysActiveInBackground: true,  // Enable background audio
         shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
       });
     }
+    
+    // Cleanup on unmount
+    return () => {
+      if (!isWeb) {
+        Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: false,
+          staysActiveInBackground: false,
+          shouldDuckAndroid: true,
+        });
+      }
+    };
   }, []);
 
   useEffect(() => {
