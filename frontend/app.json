@@ -51,7 +51,8 @@
           "microphonePermission": "Se requiere acceso al micrófono para practicar comunicaciones ATC"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true
